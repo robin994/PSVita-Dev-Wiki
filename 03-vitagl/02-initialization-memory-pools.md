@@ -1,0 +1,83 @@
+# vitaGL: Initialization & Memory Pools
+
+## vglInit vs vglInitExtended
+
+- **`vglInit(pool_size)`** — the simple form: give it a pool size (bytes) for the general-purpose
+  GL memory pool and let it pick reasonable defaults (native 960×544 resolution, no MSAA) for
+  everything else.
+- **`vglInitExtended(pool_size, width, height, ram_threshold, msaa)`** — the form real applications
+  typically use, exposing more control:
+  - **`pool_size`** — if `0`, vitaGL computes the general RAM pool size itself from
+    `ram_threshold` (see below) instead of you specifying a fixed number.
+  - **`width`/`height`** — the framebuffer resolution to actually render at. Most homebrew targets
+    the Vita's native 960×544 panel resolution directly rather than rendering at a different
+    internal resolution and scaling (see
+    [Hardware: GPU architecture](../01-hardware/03-gpu-architecture.md) for why supersampling
+    rarely makes sense on this fixed, non-upgradeable hardware).
+  - **`ram_threshold`** — when `pool_size` is `0`, this controls how the general RAM pool is sized:
+    roughly, `pool = max(0, free_RAM_at_boot - ram_threshold)` — i.e. `ram_threshold` is the amount
+    of system RAM *reserved outside* vitaGL's own pool (for the app's own heap, non-GL data
+    structures, and so on), not the pool size itself. **Lowering** `ram_threshold` grows vitaGL's
+    pool; **raising** it shrinks vitaGL's pool in favor of leaving more general RAM free for
+    everything else. This inverse relationship trips people up regularly — read it carefully before
+    tuning it, and remember it only affects the **general RAM pool** (`VGL_MEM_RAM`), not any of the
+    other pools described below.
+  - **`msaa`** — multisampling mode (`SCE_GXM_MULTISAMPLE_NONE` and friends). MSAA costs real GPU
+    time and, on tile-based hardware, real tile-buffer bandwidth — see
+    [GPU architecture](../01-hardware/03-gpu-architecture.md) for why TBDR-specific performance
+    reasoning applies here more than generic "MSAA is cheap on modern GPUs" desktop intuition would
+    suggest.
+
+## The memory pools vitaGL exposes
+
+vitaGL doesn't allocate from one undifferentiated heap — it manages (and lets you allocate directly
+from) several **distinct pools**, mirroring the hardware's actual physical memory split (see
+[Hardware: memory architecture](../01-hardware/04-memory-architecture.md)):
+
+- **`VGL_MEM_RAM`** — general system RAM, sized as described above. Where most textures, vertex
+  data, and general GL resources live by default unless you deliberately route something elsewhere.
+  This is the pool **every other UI/rendering resource in a typical app competes for** — a detail
+  that matters a lot for the next pool below.
+  Uncached variant available for CPU/GPU-shared buffers.
+- **`VGL_MEM_VRAM`** — the GPU's dedicated CDRAM pool (~128 MB physically separate from system RAM).
+- **`VGL_MEM_SLOW`** — the physically-contiguous memory pool, sized from whatever the system reports
+  as available at boot (there's no independent "make this bigger" knob the way `VGL_MEM_RAM` has via
+  `ram_threshold` — its total size is essentially a fixed, small, boot-time-determined ceiling; see
+  [Hardware: memory architecture](../01-hardware/04-memory-architecture.md)). This is the pool
+  hardware DMA-dependent consumers (most notably `SceAvPlayer`'s decoded-frame texture memory — see
+  [Hardware: multimedia hardware](../01-hardware/07-multimedia-hardware.md)) need to draw from, and
+  it's small and easy to exhaust.
+- **`VGL_MEM_BUDGET`** — a further pool reserved for coexisting with Sony's native common-dialog UI
+  (`sceCommonDialog`) when one is active on screen at the same time as your own rendering.
+
+`vglAlloc(size, pool)`/`vglFree(ptr)` are the direct allocate/free calls against a specific pool;
+`vglMemTotal(pool)`/`vglMemFree(pool)` let you query total/free space per pool at runtime — genuinely
+useful for diagnosing pool-exhaustion bugs (see
+[Common pitfalls](08-common-pitfalls.md) and
+[Hardware: multimedia hardware](../01-hardware/07-multimedia-hardware.md) for a concrete real-world
+example of a `VGL_MEM_SLOW` exhaustion bug pattern).
+
+## A concrete, real mistake worth knowing about
+
+It's a genuine, observed failure pattern for code to be changed — sometimes during an unrelated
+investigation into a *different* bug — from correctly allocating a hardware-DMA-dependent resource
+(like AVPlayer's video decode texture memory) from `VGL_MEM_SLOW`, to allocating it from
+`VGL_MEM_RAM` instead. This compiles fine, and might even *appear* to work in casual testing, but it
+means that resource now competes with every ordinary texture and UI resource in the app for the same
+general RAM pool, and it may not actually satisfy whatever physical-contiguity requirement the
+consuming hardware block needs in the first place. If a resource is documented (by whatever consumes
+it) as needing physically-contiguous memory, keep it on `VGL_MEM_SLOW` — don't "simplify" it onto
+the general pool, even if that seems to compile and superficially work.
+
+## Practical checklist for init
+
+- Pick `width`/`height` matching your actual target resolution (native panel resolution for most
+  homebrew — see [Hardware overview](../01-hardware/01-overview.md)).
+- Understand the inverse relationship of `ram_threshold` before tuning it — verify with
+  `vglMemTotal(VGL_MEM_RAM)` after init that you got the pool size you expected, rather than
+  assuming your mental model of the formula is right.
+- Route resources to the memory pool their actual consumer requires (GPU-only resources to VRAM
+  where it makes sense, DMA-dependent resources to `VGL_MEM_SLOW`) — don't default everything to
+  `VGL_MEM_RAM` just because it's the "normal" one.
+- Query `vglMemFree`/`vglMemTotal` per pool when diagnosing any "allocation failed" or
+  "works once, fails on reuse" bug — see [Common pitfalls](08-common-pitfalls.md).
