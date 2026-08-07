@@ -81,18 +81,33 @@ or player-handle lifecycle (fresh `Init` per open vs. a long-lived handle reused
 even after 3000+ polls over roughly a minute of real time.
 
 The one working reference implementation found with confirmed local playback
-(`SonicMastr/Vita-Media-Player`) depends on loading a companion **kernel-mode** module
+(`SonicMastr/Vita-Media-Player`) depends on loading a companion module
 (`SonicMastr/ReAvPlayer`, `reAvPlayer.suprx`) as a hard prerequisite before touching `SceAvPlayer`
 at all — a `taiHEN`-based patch hooking several `SceAvcodecUser` decode-path functions and
 binary-patching the loaded `SceAvPlayer` module in memory at a fixed, firmware-build-specific
-offset. Its own README describes it as "NOT for normal user use, a developer tool," and it's
-firmware-version-fragile by construction (a hardcoded patch offset). If you hit this exact
-category of failure — local decode silently never starting, isolated from every application-level
-variable — a kernel-level patch dependency (this one or an equivalent) may be the actual missing
-piece, not a bug in your own init/call sequence. Treat adopting such a dependency as a deliberate,
-**optional** choice (attempt to load it, gracefully degrade if unavailable), not a hard requirement
-— the risk profile (kernel-level, firmware-specific, explicitly labeled non-production) is
-disproportionate to make mandatory for a whole application over one feature.
+offset. Its hooking (`taiHookFunctionImport`/`taiInjectData`, the plain user-mode variants, not
+the `ForKernel` ones) is **process-scoped**, not a system-wide kernel patch - it's loaded via
+`sceKernelLoadStartModule` into the calling app's own process and only affects that process's view
+of `SceAvPlayer`, a meaningfully lower risk profile than "kernel-level" framing suggests. Its own
+README still describes it as "NOT for normal user use, a developer tool," and it's
+firmware-version-fragile by construction (a hardcoded patch offset).
+
+**Tried directly and confirmed unusable, at least against one real console's current firmware**:
+bundling the official v1.0 release binary (2021, MIT-licensed - the source needs Sony's
+non-public SNC SDK to rebuild, not obtainable outside an official PlayStation devkit license) and
+loading it exactly as `Vita-Media-Player` does produced `SCE_KERNEL_ERROR_MODULEMGR_NO_LIB` in
+Vita3K (the emulator doesn't implement all the low-level libraries this module imports - expected,
+since Vita3K never reproduced the underlying bug either), and a **silent app-level crash at
+startup on real hardware** (no on-screen error, contained to the app's own process - the console
+itself recovered normally, consistent with the process-scoped risk assessment above). The likely
+cause is exactly the risk flagged in advance: the hardcoded patch offset was reverse-engineered
+against a 2021-era `SceAvPlayer` build and most likely no longer matches current firmware's exact
+code layout - there's no newer release to fall back to. If you hit this exact category of failure
+— local decode silently never starting, isolated from every application-level variable — a
+kernel/process-level patch dependency may still be the theoretically correct fix, but expect any
+specific existing implementation you find to be firmware-version-fragile enough that it may simply
+not work against whatever firmware you're actually testing against, with no clean way to verify
+compatibility ahead of time short of trying it.
 
 ## Audio hardware and SceAudio
 
