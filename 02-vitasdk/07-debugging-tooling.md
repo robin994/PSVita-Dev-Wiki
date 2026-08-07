@@ -38,6 +38,51 @@ console the way a desktop app has stdout. Two complementary approaches cover mos
   bigger setup footprint in exchange for more built-in functionality (remote command execution,
   not just one-way logging).
 
+## Post-mortem crash dump analysis (`.psp2dmp`)
+
+When an app crashes on real hardware, the system can write a `.psp2dmp` file (named
+`psp2core-<pid>-<addr>-<eboot-name>.psp2dmp`) into the crashed app's data directory — pull it off
+via VitaShell/FTP the same way you'd retrieve any other on-device file. It's a gzip-compressed ELF
+**core file**, but not a standard Linux-style core: it's Sony's own `SceCoredump` note layout
+(`PT_NOTE` segments named `MODULE_INFO`, `THREAD_INFO`, `THREAD_REG_INFO` rather than the usual
+`NT_PRSTATUS`), so generic tools (`gdb target core`, standard `readelf -n` interpretation) can't
+make sense of the register/thread state out of the box — you get "Couldn't find general-purpose
+registers in core file" from gdb even though the data is right there.
+
+**[`vita-parse-core`](https://github.com/xyzz/vita-parse-core)** is the community tool that
+understands this layout: `python2 main.py core_file.psp2dmp your_app.elf` (needs `pyelftools==0.24`,
+Python 2). Two practical gotchas going in:
+- It targets Python 2 and a pinned ancient `pyelftools`; on a modern Python 3 environment the exact
+  pinned version won't import (`collections.MutableMapping` was removed), and even patching past
+  that hits more py2-only syntax (`string.letters`, `xrange`, byte/str handling). The note format
+  itself is simple enough (three fixed-layout `PT_NOTE` blobs, documented in the tool's own
+  `core.py`) that reimplementing just the parsing logic in Python 3 against a current `pyelftools`
+  is less friction than fighting the environment mismatch.
+- Pass the **unstripped `.elf`** the build produced (build it with `-g` for line info) — not the
+  `.velf` and not the final `eboot.bin`. Those are Vita-specific converted/signed formats standard
+  ELF tooling (`addr2line`, `nm`) can't read directly.
+
+**The real gotcha, the one that silently gives you nothing rather than an error**: the crash dump's
+`MODULE_INFO` note reports each module's code segment by its *runtime* load address (e.g. your
+main executable's code segment starting at `0x81054000` on that particular boot) — this is **not**
+the address your `.elf` was linked at. Feeding `arm-vita-eabi-addr2line` the raw
+`(crash_pc - segment.start)` offset resolves to nothing (`??`, `??:0`) with no error to tell you
+why. You have to add back the ELF's *own* link-time base address for its code `LOAD` segment
+(`arm-vita-eabi-readelf -lW your.elf` → the `VirtAddr` of the `R E` segment, typically `0x81000000`
+for a default VitaSDK link) before handing the address to `addr2line`:
+
+```
+elf_address = ELF_LOAD_SEGMENT_VIRTADDR + (crash_runtime_address - module_segment.start)
+arm-vita-eabi-addr2line -e your.elf -f -C -a <elf_address>
+```
+
+Get this offset wrong and every single lookup fails silently rather than erroring — it's easy to
+conclude the dump is unusable when actually just one add is missing. Once addresses are rebased
+correctly, `THREAD_REG_INFO` gives you full GPRs (R0–R12, SP, LR, PC) per thread, letting you
+resolve the crashing PC and LR to exact function + source line, and walk the stack (each 4-byte
+slot near SP, resolved the same way) for a lightweight backtrace even without a live debugger
+session.
+
 ## Emulator (Vita3K) vs real hardware
 
 **Vita3K** is the community Vita emulator, genuinely useful for a fast local iteration loop (no

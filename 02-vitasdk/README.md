@@ -20,5 +20,5 @@ implementation lives in the console's firmware), and CMake integration (`vita.to
 4. [Kernel/core APIs](04-kernel-core-apis.md) — threading, memory, file I/O, module loading
 5. [System libraries](05-system-libraries.md) — display, input, audio, dialogs, app management
 6. [Kernel plugins & taiHEN](06-kernel-plugins-taihen.md) — when and how homebrew reaches below user mode
-7. [Debugging & tooling](07-debugging-tooling.md) — VitaShell, real-time logging, emulation vs real hardware
+7. [Debugging & tooling](07-debugging-tooling.md) — VitaShell, real-time logging, `.psp2dmp` crash dump analysis, emulation vs real hardware
 8. [Best practices](08-best-practices.md) — a consolidated checklist for writing solid VitaSDK code
