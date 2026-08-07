@@ -43,10 +43,12 @@ from) several **distinct pools**, mirroring the hardware's actual physical memor
 - **`VGL_MEM_SLOW`** — the physically-contiguous memory pool, sized from whatever the system reports
   as available at boot (there's no independent "make this bigger" knob the way `VGL_MEM_RAM` has via
   `ram_threshold` — its total size is essentially a fixed, small, boot-time-determined ceiling; see
-  [Hardware: memory architecture](../01-hardware/04-memory-architecture.md)). This is the pool
-  hardware DMA-dependent consumers (most notably `SceAvPlayer`'s decoded-frame texture memory — see
-  [Hardware: multimedia hardware](../01-hardware/07-multimedia-hardware.md)) need to draw from, and
-  it's small and easy to exhaust.
+  [Hardware: memory architecture](../01-hardware/04-memory-architecture.md)). Small and easy to
+  exhaust. **Not actually what `SceAvPlayer`'s decoded-frame texture memory needs on real
+  hardware**, despite looking like the obvious candidate ("physically contiguous" reads as exactly
+  what a hardware decoder should want) — see
+  [Hardware: multimedia hardware](../01-hardware/07-multimedia-hardware.md) for what real testing
+  against a confirmed-working reference implementation found instead.
 - **`VGL_MEM_BUDGET`** — a further pool reserved for coexisting with Sony's native common-dialog UI
   (`sceCommonDialog`) when one is active on screen at the same time as your own rendering.
 
@@ -60,14 +62,42 @@ example of a `VGL_MEM_SLOW` exhaustion bug pattern).
 ## A concrete, real mistake worth knowing about
 
 It's a genuine, observed failure pattern for code to be changed — sometimes during an unrelated
-investigation into a *different* bug — from correctly allocating a hardware-DMA-dependent resource
-(like AVPlayer's video decode texture memory) from `VGL_MEM_SLOW`, to allocating it from
-`VGL_MEM_RAM` instead. This compiles fine, and might even *appear* to work in casual testing, but it
-means that resource now competes with every ordinary texture and UI resource in the app for the same
-general RAM pool, and it may not actually satisfy whatever physical-contiguity requirement the
-consuming hardware block needs in the first place. If a resource is documented (by whatever consumes
-it) as needing physically-contiguous memory, keep it on `VGL_MEM_SLOW` — don't "simplify" it onto
-the general pool, even if that seems to compile and superficially work.
+investigation into a *different* bug — from allocating a hardware-DMA-dependent resource (like
+AVPlayer's video decode texture memory) from a dedicated pool, to allocating it from `VGL_MEM_RAM`
+instead. This compiles fine, and might even *appear* to work in casual testing, but it means that
+resource now competes with every ordinary texture and UI resource in the app for the same general
+RAM pool, and it likely won't satisfy whatever the consuming hardware block actually needs. Don't
+"simplify" a special-purpose allocation onto the general pool just because it compiles and
+superficially works.
+
+## `vglInitWithCustomThreshold` and the `cdlg_threshold` gotcha
+
+`vglInitExtended` is actually a thin wrapper around a more general function:
+```
+vglInitWithCustomThreshold(pool_size, width, height, ram_threshold, cdram_threshold,
+                            phycont_threshold, cdlg_threshold, msaa)
+```
+— reach for this directly when you need to control the `VGL_MEM_VRAM` (CDRAM) sizing, since
+`vglInitExtended` hardcodes `cdram_threshold` to `0`, meaning it claims **100% of available CDRAM**
+for its own pool at boot. If anything else in your app needs to draw CDRAM directly (outside
+vitaGL's own pool - see [Hardware: multimedia hardware](../01-hardware/07-multimedia-hardware.md)
+for a real case where this was required), there's nothing left unless you pass a non-zero
+`cdram_threshold` yourself.
+
+**The trap**: `cdlg_threshold` (the common-dialog/`sceImeDialog` memory budget) does **not** follow
+the same "pool = available − threshold" pattern as the other three. It's computed as
+`SCE_KERNEL_MAX_MAIN_CDIALOG_MEM_SIZE − cdlg_threshold` (a fixed constant, not a live free-memory
+query) — so `cdlg_threshold = 0` means "reserve the *entire* max budget," the **opposite** of what
+`0` means for `ram_threshold`/`cdram_threshold`/`phycont_threshold`. `vglInitExtended` itself passes
+`SCE_KERNEL_MAX_MAIN_CDIALOG_MEM_SIZE` (not `0`) here internally, giving a `0`-sized common-dialog
+pool by default. Passing `0` for all four thresholds by analogy — reasonable-looking, since it works
+correctly for the other three — silently reserves the full common-dialog budget instead, which
+broke native `sceImeDialog` text entry outright on real hardware (tapping a text field did nothing,
+looked like a frozen app) in a real, shipped regression. `SCE_KERNEL_MAX_MAIN_CDIALOG_MEM_SIZE`
+itself isn't in the public headers to reference directly - passing a large sentinel value (e.g.
+`0x10000000`) for `cdlg_threshold` reliably reproduces the "reserve nothing" (`0`-sized pool)
+default regardless of the constant's actual value. **Treat `cdlg_threshold` as the odd one out and
+double check its direction explicitly** rather than assuming it follows the other three thresholds.
 
 ## Practical checklist for init
 

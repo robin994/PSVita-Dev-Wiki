@@ -37,8 +37,23 @@ rather than driving the raw `SceAvcdec`/`SceVideodec` decoder APIs directly. Key
   and `allocateTexture`/`deallocateTexture` (**video frame memory specifically** — this is the hook
   point that determines which memory pool decoded frames actually live in; see
   [Memory architecture](04-memory-architecture.md) and
-  [vitaGL: memory pools deep dive](../03-vitagl/06-memory-pools-deep-dive.md) — decoded video
-  frames commonly need to come from the physically-contiguous pool).
+  [vitaGL: memory pools deep dive](../03-vitagl/06-memory-pools-deep-dive.md)). **Confirmed on real
+  hardware, the hard way**: neither vitaGL's physically-contiguous pool (`VGL_MEM_SLOW`) nor even
+  its own CDRAM sub-pool (`VGL_MEM_VRAM`) work here, despite both succeeding at the byte-allocation
+  level with no error - `sceAvPlayerGetVideoData()` simply never yields a frame unless the buffer
+  came from a *directly* allocated, GPU-mapped CDRAM block: raw `sceKernelAllocMemBlock(...,
+  SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, ...)` followed by an explicit
+  `sceGxmMapMemory(ptr, size, SCE_GXM_MEMORY_ATTRIB_READ | SCE_GXM_MEMORY_ATTRIB_WRITE)` call, not
+  any vitaGL pool API. This was only found by diffing against a confirmed-working, independently-
+  written reference implementation (`yizhigai/vita-sample-avplayer`) - every plausible cause
+  reachable by varying the calling app's own AVPlayer call sequence (stream-enable calls, event
+  callbacks, buffer counts, player-handle lifecycle, container structure) had already been ruled out
+  individually and still failed identically, which is itself a good signal to stop varying your own
+  code and go find something independently-working to diff against instead. If you're using vitaGL
+  for the rest of your rendering, remember it claims all of CDRAM for its own pool by default
+  (`vglInitExtended` hardcodes this) - see
+  [vitaGL: initialization & memory pools](../03-vitagl/02-initialization-memory-pools.md) for how to
+  leave real headroom for a raw allocation like this to succeed with.
 - **Lifecycle events** delivered via the event callback (`SceAvPlayerEventCallback`, signature
   `(void *p, int32_t eventId, int32_t sourceId, void *eventData)`) — the event ID values themselves
   are **not part of the officially documented public header** (they're a community-reverse-engineered

@@ -17,13 +17,16 @@ Think in terms of **who actually consumes this memory, and what does that consum
   competing with everything else for general RAM bandwidth/capacity, though for most homebrew this
   is a secondary optimization, not a correctness requirement the way the next pool is.
 - **Anything a hardware DMA-capable block reads/writes directly without going through the GPU's own
-  memory-management path** — `VGL_MEM_SLOW` (physically-contiguous). This is a **correctness**
-  requirement, not a performance tuning choice, when the consumer documents it as such — the
-  canonical example is `SceAvPlayer`'s video-frame texture memory (see
-  [Hardware: multimedia hardware](../01-hardware/07-multimedia-hardware.md)). Putting such a
-  resource on the wrong pool doesn't necessarily fail loudly — it can compile, run, and only later
-  manifest as decode failures, corruption, or exhaustion-shaped bugs that look unrelated to the
-  actual root cause.
+  memory-management path** — `VGL_MEM_SLOW` (physically-contiguous) is the obvious first guess, and
+  is genuinely correct for some consumers, but verify against real hardware rather than assuming:
+  `SceAvPlayer`'s video-frame texture memory turned out to need neither `VGL_MEM_SLOW` nor even
+  vitaGL's own `VGL_MEM_VRAM` sub-pool - both allocate successfully with no error, but the consumer
+  (the hardware decoder) simply never produces output unless the memory came from a directly-
+  allocated, GPU-mapped block instead of any vitaGL pool API at all (see
+  [Hardware: multimedia hardware](../01-hardware/07-multimedia-hardware.md) for the specifics and
+  how this was actually confirmed). Putting a DMA-dependent resource on the wrong pool doesn't
+  necessarily fail loudly — it can compile, run, allocate without error, and only manifest as decode
+  failures or silent no-ops that look unrelated to the actual root cause.
 - **Anything that needs to coexist cleanly with a native `sceCommonDialog` overlay** —
   `VGL_MEM_BUDGET`, a smaller pool specifically carved out for this coexistence case.
 
@@ -36,20 +39,23 @@ not hundreds. Anything routed to this pool needs to be genuinely justified (a re
 contiguity requirement from whatever consumes it), and needs careful, explicit lifecycle management —
 see the case study below.
 
-## Case study: a real leak-shaped `VGL_MEM_SLOW` bug
+## Case study: a real leak-shaped bug in a callback-based memory contract
 
-A genuinely observed failure pattern, worth internalizing as a general lesson: an API that hands you
-memory-callback hooks (allocate/deallocate pairs, as `SceAvPlayer` does for video-frame memory — see
+A genuinely observed failure pattern, worth internalizing as a general lesson regardless of which
+pool ends up being correct for a given resource: an API that hands you memory-callback hooks
+(allocate/deallocate pairs, as `SceAvPlayer` does for video-frame memory — see
 [Hardware: multimedia hardware](../01-hardware/07-multimedia-hardware.md)) does **not** guarantee its
 own close/teardown path reliably calls your deallocate callback for every resource it ever asked
 your allocate callback for. Concretely: closing a video player didn't always trigger the expected
 deallocation callback for whatever buffer it was actively using at the moment of close — meaning that
-allocation stayed "alive" from `VGL_MEM_SLOW`'s bookkeeping perspective even though nothing was
-using it anymore. Across repeated open/close cycles (reopening a video, switching content), each such
+allocation stayed "alive" from the allocator's bookkeeping perspective even though nothing was using
+it anymore. Across repeated open/close cycles (reopening a video, switching content), each such
 leaked allocation permanently reduced the pool's available space, until eventually a *new* video
 open failed outright for lack of room — a failure that, investigated superficially, looks like "this
 new content doesn't fit" or "the pool is too small," when the actual root cause is unrelated: prior
-sessions' allocations were never properly released.
+sessions' allocations were never properly released. (This held true across both memory-pool choices
+tried for this consumer - it's a property of the callback contract itself, independent of which pool
+backs the allocation.)
 
 **The fix pattern, generalizable beyond this one specific API**: don't trust a callback-based
 allocate/deallocate contract to be perfectly honored on every code path. Track every allocation your
@@ -78,9 +84,12 @@ the close call already handled it.
 
 ## Practical checklist
 
-- Choose pools based on what the *consumer* of a resource actually requires, not habit.
-- Treat `VGL_MEM_SLOW` allocations as correctness-critical and track their lifecycle explicitly —
-  don't lean solely on a third-party callback contract.
+- Choose pools based on what the *consumer* of a resource actually requires, not habit - and verify
+  against real hardware rather than trusting that a plausible-sounding pool name (like
+  "physically-contiguous") is automatically the correct one for a given consumer.
+- Treat allocations handed out through any callback-based memory contract (an SDK's
+  allocate/deallocate hooks) as needing explicit lifecycle tracking on your own side — don't lean
+  solely on the third party's close/teardown path to call your deallocator reliably.
 - Reach for `vglMemTotal`/`vglMemFree` early in any allocation-failure investigation, not as a last
   resort.
 - If growing a pool doesn't change a failure's exact byte-for-byte signature, stop chasing pool
