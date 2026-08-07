@@ -54,6 +54,46 @@ rather than driving the raw `SceAvcdec`/`SceVideodec` decoder APIs directly. Key
   every buffer your own `allocateTexture` callback hands out and explicitly free anything still
   outstanding after `sceAvPlayerClose()` returns, rather than assuming the SDK already did it.
 
+### `sceAvPlayerEnableStream`/`sceAvPlayerStreamCount` aren't officially documented at all
+
+The official reference (`docs.vitasdk.org/group__SceAvPlayerUser.html`) documents a minimal surface
+— `Init`, `AddSource`, `Start`/`Stop`/`Pause`/`Resume`, `GetAudioData`/`GetVideoData`,
+`GetStreamInfo`, `IsActive`, `SetLooping`, `SetTrickSpeed`, `CurrentTime`, `JumpToTime`, `Close` —
+with **no** `EnableStream`, **no** `StreamCount`, and no documented event-ID enum at all. The
+`StreamCount → GetStreamInfo → EnableStream → Start` pattern seen in a lot of community sample code
+(gated on an undocumented `SCE_AVPLAYER_STATE_READY == 2` event ID) is real, working convention in
+*some* codebases, but it is not Sony's documented contract, and — confirmed through direct,
+systematic testing on real hardware — it is not a required step: `AddSource` with `autoStart` set
+and no event callback at all is the complete, documented flow, and is exactly what at least one
+independent, actively-distributed local-file MP4 player homebrew project (`vita-sample-avplayer`)
+uses successfully.
+
+### A real, hardware-confirmed limitation: local playback can fail categorically, independent of any application code
+
+On at least one real console/firmware combination, local (non-streamed) video playback through the
+stock `SceAvPlayer` module was confirmed, via a from-scratch minimal isolation test with zero
+shared code against a larger application, to **never produce a single decoded frame** — regardless
+of video encoding (profile/level/resolution), container structure (`moov` atom position/faststart),
+memory pool sizing, output buffer count, `EnableStream` usage or omission, event-callback presence,
+or player-handle lifecycle (fresh `Init` per open vs. a long-lived handle reused via `AddSource`/
+`Stop`). `sceAvPlayerAddSource` reports success, `sceAvPlayerIsActive` intermittently reports true,
+`allocateTexture` callback allocations succeed — but `sceAvPlayerGetVideoData` never yields a frame,
+even after 3000+ polls over roughly a minute of real time.
+
+The one working reference implementation found with confirmed local playback
+(`SonicMastr/Vita-Media-Player`) depends on loading a companion **kernel-mode** module
+(`SonicMastr/ReAvPlayer`, `reAvPlayer.suprx`) as a hard prerequisite before touching `SceAvPlayer`
+at all — a `taiHEN`-based patch hooking several `SceAvcodecUser` decode-path functions and
+binary-patching the loaded `SceAvPlayer` module in memory at a fixed, firmware-build-specific
+offset. Its own README describes it as "NOT for normal user use, a developer tool," and it's
+firmware-version-fragile by construction (a hardcoded patch offset). If you hit this exact
+category of failure — local decode silently never starting, isolated from every application-level
+variable — a kernel-level patch dependency (this one or an equivalent) may be the actual missing
+piece, not a bug in your own init/call sequence. Treat adopting such a dependency as a deliberate,
+**optional** choice (attempt to load it, gracefully degrade if unavailable), not a hard requirement
+— the risk profile (kernel-level, firmware-specific, explicitly labeled non-production) is
+disproportionate to make mandatory for a whole application over one feature.
+
 ## Audio hardware and SceAudio
 
 Audio output goes through `SceAudioOut` (raw PCM output ports, `sceAudioOutOpenPort`/
