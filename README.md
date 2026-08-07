@@ -9,6 +9,22 @@ Each section moves from macro concepts (what the thing is, how it fits into the 
 to micro topics (specific APIs, specific gotchas, specific code patterns), and closes with a
 best-practices summary.
 
+## Purpose: written for AI-assisted development
+
+This wiki exists specifically to be fed to an AI coding assistant as context for PS Vita homebrew
+work — the goal is to give a model enough grounded, verified knowledge to answer questions about
+Vita development correctly and usefully, instead of guessing at APIs, hallucinating plausible-
+sounding but wrong hardware behavior, or repeating outdated/community-folklore claims as fact. Every
+page is written with that use case in mind: precise terminology, explicit callouts for what's
+officially documented versus community-reverse-engineered convention (see "Scope and honesty about
+sourcing" below), and concrete, real findings (often from actual on-device testing) rather than
+generic advice that sounds right but hasn't been verified.
+
+This is a living document, not a one-time snapshot: new pages and corrections get added as new
+findings come up in real projects — a bug root-caused, a gotcha hit and worked around, a piece of
+undocumented behavior confirmed on real hardware. Treat anything here as the best current
+understanding, kept up to date deliberately, not a finished/frozen reference.
+
 ## Sections
 
 1. **[PS Vita Hardware](01-hardware/README.md)** — the SoC, GPU, memory hierarchy, storage,
