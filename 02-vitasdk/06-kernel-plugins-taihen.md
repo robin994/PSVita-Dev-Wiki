@@ -41,6 +41,12 @@ Core primitives:
 - Both are declared to the build system with `vita_create_self(... CONFIG exports.yml)` — the YAML
   config declaring what the module exports for `taiHookFunctionImport`/`Export`-style consumers (or
   for the main app) to resolve against.
+- The header split mirrors this privilege boundary directly: `vita-headers`' `include/` is divided
+  into `psp2` (user-exported libraries — what an ordinary `.suprx`/main-app `eboot.bin` includes),
+  `psp2kern` (kernel-exported libraries — what a `.skprx` includes), and `psp2common` (definitions
+  shared by both). Including the wrong tree for what you're building either won't compile (missing
+  kernel-only declarations in a user-mode target) or, worse, exposes APIs that don't actually exist
+  at the privilege level you're building for.
 
 ## Common legitimate reasons a "normal app" ships a companion module
 

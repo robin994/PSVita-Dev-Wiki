@@ -9,7 +9,10 @@ dynamic linking is NID-based rather than symbol-name-based like a conventional E
 from years of community reverse engineering, consolidated into the `vitasdk` GitHub organization's
 projects: `vita-headers` (the header/NID database), `vita-toolchain` (tools to produce Vita-format
 executables from a standard cross-compiler's output), `vdpm` (a package manager for prebuilt
-third-party library ports), and the SDK installer/build scripts that tie it together.
+third-party library ports), and the SDK installer/build scripts that tie it together. The generated
+API reference for `vita-headers` (doxygen, rebuilt on every push to its master branch) is hosted at
+http://vitasdk.github.io/vita-headers — the fastest way to look up a function/struct's actual
+declaration without grepping the installed SDK by hand.
 
 Because of this origin, **the header surface is not 100% complete or 100% guaranteed-accurate** —
 some functions are documented from partial reverse engineering, some struct layouts are inferred
@@ -68,4 +71,12 @@ rather than "SDK version 3.x vs 4.x." Because of the reverse-engineering origin,
 changes do land (a struct layout correction, a function signature fix) as better information becomes
 available — worth being aware of if you maintain code across a long timespan and something that
 compiled cleanly a year ago suddenly doesn't after an SDK update; check whether an upstream
-correction is the cause before assuming your own code regressed.
+correction is the cause before assuming your own code regressed. `vita-headers` actually flags this
+class of change to consumers deliberately, via `vita.header_warn.cmake` — a CMake hook that emits a
+build-time notice when the headers you're building against introduce a backwards-incompatible
+change since the last version you might have pinned. The NID database itself (`db/`) is organized
+per-firmware-version (separate directories per SDK/firmware release the community has reverse
+engineered), and `PSP2_SDK_VERSION` (`psp2common/defs.h`) is available at compile time if you need
+to conditionally guard code against a specific header-surface era — relevant since this project's
+own PSM-runtime bootstrap sequence is exactly the kind of code that's sensitive to
+firmware/SDK-version-specific behavior.
