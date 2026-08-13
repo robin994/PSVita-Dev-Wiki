@@ -1,9 +1,12 @@
 # PS Vita Development Wiki
 
 A reference wiki for PlayStation Vita homebrew development: the hardware itself, VitaSDK (the
-toolchain and system libraries), vitaGL (the OpenGL-subset-over-sceGxm graphics library), and
-Dear ImGui as ported for the Vita (imgui-vita). Written to stand on its own — not tied to any one
-project — so it can be used as a general-purpose reference whenever any of these come up again.
+toolchain and system libraries), vitaGL (the OpenGL-subset-over-sceGxm graphics library), Dear
+ImGui as ported for the Vita (imgui-vita), vita2d (a high-level 2D graphics library, the
+no-porting-required alternative to vitaGL for new 2D apps), and the general methodology for porting
+an OpenGL-based library to vitaGL when that *is* what's needed. Written to stand on its own — not
+tied to any one project — so it can be used as a general-purpose reference whenever any of these
+come up again.
 
 Each section moves from macro concepts (what the thing is, how it fits into the whole picture) down
 to micro topics (specific APIs, specific gotchas, specific code patterns), and closes with a
@@ -36,14 +39,26 @@ understanding, kept up to date deliberately, not a finished/frozen reference.
    `sceGxm`, letting you write mostly-portable OpenGL code that actually runs on the Vita's GPU.
 4. **[Dear ImGui / imgui-vita](04-imgui/README.md)** — the immediate-mode GUI library and its
    Vita-specific backend (`imgui_impl_vitagl`), for building tool-like or menu-driven UIs quickly.
+5. **[vita2d](05-vita2d/README.md)** — a high-level 2D graphics library built directly on `sceGxm`,
+   not GL-shaped at all; the right starting point for a *new* 2D app when you're not porting
+   existing OpenGL code. Includes a full worked case study of VHBB, a real app-store client built
+   entirely on it.
+6. **[Porting OpenGL libraries to vitaGL](06-porting-opengl-libraries-to-vitagl/README.md)** — the
+   general methodology (extracted from imgui-vita's real, verified port) for when you *do* need to
+   bring an existing OpenGL-based library onto vitaGL, plus a planning-stage case study applying it
+   to RmlUi.
 
 ## How to read this
 
 If you're starting from zero, read in order: hardware gives you the mental model everything else is
-built on, VitaSDK is the ground floor of "how do I even get code running on the device," vitaGL is
-the graphics layer most homebrew ends up using, and imgui-vita is a common choice for the UI layer
-on top of that. If you already know roughly what you're doing, jump straight to the section/page you
-need — each page is written to be self-contained enough to skim on its own.
+built on, VitaSDK is the ground floor of "how do I even get code running on the device," and then
+the fork depends on what you're building. Writing a new 2D app from scratch and not porting
+anything? Read vita2d next — it's the gentler, no-GL-knowledge-required path, proven by the VHBB
+case study. Bringing an existing OpenGL-based library (a UI toolkit, an engine) onto the Vita
+instead? Read vitaGL, then imgui-vita as a real worked example, then the porting-methodology
+section for how to generalize that to a different library. If you already know roughly what you're
+doing, jump straight to the section/page you need — each page is written to be self-contained
+enough to skim on its own.
 
 ## Scope and honesty about sourcing
 
