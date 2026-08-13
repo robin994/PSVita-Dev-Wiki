@@ -13,6 +13,35 @@ lets you push files from your dev machine directly onto the console's storage ov
 network, which is the fastest iteration loop for "build, transfer, install, test" without physically
 moving a memory card back and forth.
 
+### Faster than reinstalling the VPK every time
+
+Reinstalling the whole `.vpk` through VitaShell on every build is slow enough to actively discourage
+tight iteration. Two things speed this up, usable independently:
+
+- **Replace `eboot.bin` directly** instead of reinstalling: once a VPK is installed once, its
+  executable lives at `ux0:app/<TITLEID>/eboot.bin` — FTP-overwriting that file (VitaShell's FTP
+  server, or any FTP client/`curl -T`) and relaunching the app picks up a new build without going
+  through the installer again. See [Homebrew app anatomy](03-homebrew-app-anatomy.md) for how the
+  title ID maps to that path.
+- **`vitacompanion`** — a plugin that keeps a background FTP server running on the Vita at all times
+  and listens for a couple of remote commands over a plain TCP port (`1338` by default): `destroy`
+  (kill the currently running homebrew) and `launch <TITLEID>`. Combined with the `eboot.bin`-replace
+  trick above, a single CMake custom target can close the running app, push the new build, and
+  relaunch it in one step:
+
+  ```cmake
+  set(PSVITAIP "192.168.0.198" CACHE STRING "PSVita IP (for FTP access)")
+  add_custom_target(send
+                    COMMAND echo destroy | nc ${PSVITAIP} 1338
+                    COMMAND curl -T eboot.bin ftp://${PSVITAIP}:1337/ux0:/app/${VITA_TITLEID}/
+                    COMMAND echo launch ${VITA_TITLEID} | nc ${PSVITAIP} 1338
+                    DEPENDS ${VITA_VPKNAME}.vpk-vpk
+                    )
+  ```
+
+  Run with `cmake --build build --target send`. Requires `vitacompanion` installed as a taiHEN
+  plugin on the device first — see [Kernel plugins & taiHEN](06-kernel-plugins-taihen.md).
+
 ## Real-time on-device logging
 
 Standard `printf`-to-a-terminal debugging doesn't exist in the usual sense — there's no attached

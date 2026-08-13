@@ -10,26 +10,57 @@ The Vita does not present a single flat heap the way a desktop OS does. Distinct
 regions exist, each with different properties, and the kernel API makes you choose explicitly which
 one a given allocation comes from:
 
-- **General user RAM** — the bulk of the ~512 MB system RAM, roughly ~300+ MB usable by a
-  foreground app after the system's own reservation (exact figure varies by firmware/what system
-  features are active — query it at runtime via `sceKernelGetFreeMemorySize` rather than hardcoding
-  a number). Cached, general-purpose, allocated via `sceKernelAllocMemBlock` with types like
+- **General user RAM (`USER_RW`)** — of the 512 MB main-memory die, a 365 MiB partition. Cached,
+  general-purpose, allocated via `sceKernelAllocMemBlock` with types like
   `SCE_KERNEL_MEMBLOCK_TYPE_USER_RW`. This is where your heap, most textures (unless you route them
-  to CDRAM), audio buffers, and general application data live.
-- **CDRAM / VRAM** — a separate ~128 MB pool physically dedicated to the GPU
-  (`SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW`). Graphics libraries (vitaGL included) commonly split
-  their own texture/vertex-buffer allocations between general RAM and CDRAM.
-- **Physically-contiguous memory ("phycont")** — a small, separate pool (commonly observed around
-  the ~26-32 MB range on real hardware, though this is not a number you should hardcode — query it)
-  that is guaranteed to be one unbroken run of physical addresses, required by hardware blocks that
-  do DMA without an MMU/scatter-gather layer in front of them — most notably the **hardware video
-  decoder** used by `SceAvPlayer`. Allocated with `SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_PHYCONT_RW`
-  (or the `_NC_RW` uncached variant). This pool is small enough, and easy enough to exhaust, that
-  it's a recurring source of real bugs — see the callout below.
-- **CDIALOG memory** — a further pool reserved for Sony's native common-dialog UI (on-screen
-  keyboard, save-data dialogs, etc., via `sceCommonDialog`) when one is active; homebrew graphics
-  layers sometimes carve out a small budget here too so a native dialog can coexist with the app's
-  own rendering without fighting over CDRAM.
+  to CDRAM), audio buffers, and general application data live. **The 365 MiB figure is not what you
+  get by default**, though — see "Your app's actual RAM budget" below; without opting in, an app is
+  capped at 256 MiB of this partition regardless of how much is physically present. Exact free-space
+  figures still vary by firmware/active system features — query at runtime via
+  `sceKernelGetFreeMemorySize` rather than hardcoding a number.
+- **CDRAM / VRAM** — of the 128 MB video-memory die, a 112 MiB partition usable by applications
+  (`SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW`); the remaining 16 MiB is reserved by the system.
+  Graphics libraries (vitaGL included) commonly split their own texture/vertex-buffer allocations
+  between general RAM and CDRAM.
+- **Physically-contiguous memory ("phycont")** — a 26 MiB partition of main memory, **1 MiB-aligned**
+  (every allocation from it effectively rounds up to a 1 MiB boundary, so many small allocations
+  waste more of this pool than their nominal size suggests), guaranteed to be one unbroken run of
+  physical addresses — required by hardware blocks that do DMA without an MMU/scatter-gather layer in
+  front of them, most notably the **hardware video decoder** used by `SceAvPlayer`. Allocated with
+  `SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_PHYCONT_RW` (or the `_NC_RW` uncached variant). 26 MiB total,
+  shared by everything in the app that uses it, is small enough to be a recurring source of real
+  bugs — see the callout below. (Query the live figure via `sceKernelGetFreeMemorySize` rather than
+  hardcoding 26 MiB — it's derived from what's actually available at boot, not a fixed constant.)
+- **CDIALOG memory** — a 9 MiB partition (~8.77 MiB actually usable, after 1024-byte alignment)
+  reserved for Sony's native common-dialog UI (on-screen keyboard, save-data dialogs, etc., via
+  `sceCommonDialog`) when one is active; homebrew graphics layers sometimes carve out a small budget
+  here too so a native dialog can coexist with the app's own rendering without fighting over CDRAM.
+- **Reserved** — the remaining 112 MiB of main memory is reserved by the OS itself (shared modules,
+  kernel, shell) and not available to applications under any flag.
+
+## Your app's actual RAM budget: the `ATTRIBUTE2` param.sfo flag
+
+`USER_RW`'s 365 MiB partition is the *ceiling*, not what an app gets by default. Without opting in, a
+homebrew app is limited to a **256 MiB** budget (to leave headroom for the system to keep other apps
+resident for fast-switching). To raise it, set `ATTRIBUTE2` in the app's `param.sfo` — in a CMake
+project, via `VITA_MKSFOEX_FLAGS`:
+
+```cmake
+set(VITA_MKSFOEX_FLAGS "-d ATTRIBUTE2=12")
+```
+
+| Value | Extra RAM | Effective budget |
+| --- | --- | --- |
+| `4` | +29 MiB | ~285 MiB |
+| `8` | +77 MiB | ~333 MiB |
+| `12` | +109 MiB | ~365 MiB (the full `USER_RW` partition) |
+
+`12` is the value most commonly used in the homebrew ecosystem. There's a real tradeoff: a bigger
+budget claims more memory the system would otherwise keep other suspended apps resident with, at the
+benefit of headroom for the app itself — worth setting deliberately based on the app's actual memory
+needs, not reflexively maxed out on every project. See
+[Homebrew app anatomy](../02-vitasdk/03-homebrew-app-anatomy.md) for the rest of what `param.sfo`
+controls.
 
 vitaGL exposes this pool split directly through its own allocation-type enum (`VGL_MEM_RAM`,
 `VGL_MEM_VRAM`, `VGL_MEM_SLOW` for phycont, `VGL_MEM_BUDGET` for the common-dialog pool) — see

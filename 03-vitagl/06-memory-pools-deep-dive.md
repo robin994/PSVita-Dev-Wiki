@@ -18,7 +18,11 @@ Think in terms of **who actually consumes this memory, and what does that consum
   is a secondary optimization, not a correctness requirement the way the next pool is.
 - **Anything a hardware DMA-capable block reads/writes directly without going through the GPU's own
   memory-management path** — `VGL_MEM_SLOW` (physically-contiguous) is the obvious first guess, and
-  is genuinely correct for some consumers, but verify against real hardware rather than assuming:
+  is genuinely correct for some consumers, but verify against real hardware rather than assuming.
+  Note also that by default `VGL_MEM_SLOW` allocations are sub-allocated from one heap-managed pool
+  set up at init — a consumer that needs each allocation to be its own dedicated memblock needs
+  vitaGL built with the `PHYCONT_ON_DEMAND=1` flag (see
+  [Build-time flags reference](09-build-flags.md)), not just a `VGL_MEM_SLOW` allocation call:
   `SceAvPlayer`'s video-frame texture memory turned out to need neither `VGL_MEM_SLOW` nor even
   vitaGL's own `VGL_MEM_VRAM` sub-pool - both allocate successfully with no error, but the consumer
   (the hardware decoder) simply never produces output unless the memory came from a directly-

@@ -23,3 +23,4 @@ without adjustment, and vice versa.
 6. [Memory pools deep dive](06-memory-pools-deep-dive.md) — RAM vs VRAM vs physically-contiguous vs budget pools, choosing correctly
 7. [Performance best practices](07-performance-best-practices.md) — batching, state-change costs, TBDR-aware advice
 8. [Common pitfalls](08-common-pitfalls.md) — version drift, non-standard API surface, real gotchas from the field
+9. [Build-time flags reference](09-build-flags.md) — the full `make FLAG=1 install` flag list, what each does, and how to safely rebuild a substitute library

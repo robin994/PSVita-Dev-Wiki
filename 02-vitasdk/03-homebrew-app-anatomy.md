@@ -9,7 +9,9 @@ consume. Unzip one and you'll typically find:
   runs when the app launches.
 - **`sce_sys/param.sfo`** — metadata: title ID, app version, app name, and various flags. Generated
   by `vita-mksfoex`/the `vita_create_vpk` CMake macro from values you supply (`TITLEID`, `VERSION`,
-  `NAME`).
+  `NAME`), or extra flags via `VITA_MKSFOEX_FLAGS` — most notably `ATTRIBUTE2`, which raises the
+  app's default 256 MiB RAM budget up to the full 365 MiB partition; see
+  [Hardware: memory architecture](../01-hardware/04-memory-architecture.md#your-apps-actual-ram-budget-the-attribute2-paramsfo-flag).
 - **`sce_sys/icon0.png`**, **`sce_sys/livearea/contents/*.png`+`template.xml`** — the LiveArea tile
   assets (icon, background, layout) shown on the system's home screen for the installed app.
 - Any bundled data files the app needs at runtime (fonts, additional icons, bundled default assets)
