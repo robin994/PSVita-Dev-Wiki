@@ -62,7 +62,7 @@ vitaGL's source. Getting this flag applied means rebuilding (or obtaining an alr
 | `SAFE_DRAW=1` | Less-optimized draw pipeline; can fix some rendering glitches (`-DSTRICT_DRAW_COMPLIANCE`). |
 | `SAFE_UNIFORMS=1` | Less-optimized shader uniform pipeline; makes basic-type-array uniform location indexing spec-compliant (`-DSTRICT_UNIFORMS_COMPLIANCE`). |
 | `UNPURE_TEXFORMATS=1` | Support for texture dimensions other than 2D (`tex2D` still required in shader code). |
-| `ENABLE_LEGACY_PIPELINE=1` | Support for the legacy `vglDrawObjects` pipeline — relevant to the argument-count drift covered in [Common pitfalls](08-common-pitfalls.md). |
+| **`ENABLE_LEGACY_PIPELINE=1`** | **Support for the legacy `vglDrawObjects`/mapped-pointer immediate-mode pipeline** (`vglVertexPointerMapped`, `vglTexCoordPointerMapped`, `vglDrawObjects`, etc. — see the argument-count drift in [Common pitfalls](08-common-pitfalls.md)). On a sufficiently modern vitaGL commit, any app built without this flag that still uses the legacy draw path (imgui-vita's own renderer included) gets a **silent black screen with zero diagnostic signal** — no crash, no error, input/audio/app-logic completely unaffected, only visual output missing. Confirmed the hard way: this flag alone was the difference between a fully-black screen and correct rendering, discovered only after exhausting every other flag/commit/toolchain hypothesis first. **If a legacy-pipeline app (anything not rewritten against vitaGL's GLSL-shader path) renders nothing on a modern vitaGL build, try this flag before anything else.** |
 | `HAVE_FIXED_ATTRIBUTES=1` | Experimental `GL_FIXED` attribute support in GLSL-shader codepaths. |
 
 ## Hack / speedhack flags (all trade correctness or stability for speed)
