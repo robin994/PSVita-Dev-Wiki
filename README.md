@@ -47,6 +47,10 @@ understanding, kept up to date deliberately, not a finished/frozen reference.
    general methodology (extracted from imgui-vita's real, verified port) for when you *do* need to
    bring an existing OpenGL-based library onto vitaGL, plus a planning-stage case study applying it
    to RmlUi.
+7. **[Porting decompiled console games](07-porting-decompiled-games/README.md)** — a different
+   problem from section 6: bringing a whole decompiled game (not a single library) to the Vita,
+   using the libultraship/Shipwright pattern behind community ports like Ghostship and
+   SpaghettiKart. Includes a planning-stage case study applying it to a Super Smash Bros. 64 port.
 
 ## How to read this
 
@@ -56,7 +60,10 @@ the fork depends on what you're building. Writing a new 2D app from scratch and 
 anything? Read vita2d next — it's the gentler, no-GL-knowledge-required path, proven by the VHBB
 case study. Bringing an existing OpenGL-based library (a UI toolkit, an engine) onto the Vita
 instead? Read vitaGL, then imgui-vita as a real worked example, then the porting-methodology
-section for how to generalize that to a different library. If you already know roughly what you're
+section for how to generalize that to a different library. Porting a whole decompiled game (a
+libultraship/Shipwright-family project, or similar) rather than a single library? Read vitaGL for
+the graphics foundation, then go straight to section 7 — it's a different shape of problem from
+section 6 and has its own methodology. If you already know roughly what you're
 doing, jump straight to the section/page you need — each page is written to be self-contained
 enough to skim on its own.
 
