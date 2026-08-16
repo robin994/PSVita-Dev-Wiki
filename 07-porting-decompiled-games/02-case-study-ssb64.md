@@ -31,37 +31,40 @@ closest thing to a literal template available. (See page 1's correction note: th
 evidence of a dedicated Vita platform shim to hunt for here — the real work is more likely
 concentrated in the `Makefile.vita` and which existing libultraship backend it links against.)
 
-## Where this game is harder than the existing reference ports
+## v1 scope: 60 fps + widescreen, no netplay
 
-Two things distinguish it from Ghostship/SpaghettiKart/2ship2harkinian:
+Confirmed target: a working v1 at a stable 60 fps with widescreen, netplay explicitly deferred to
+v2. Both v1 features already exist upstream — this is a config-and-tune job, not new engineering:
 
-- **Real-time performance budget.** A fighting-game engine with several simultaneous characters,
-  physics, hitboxes, and particle effects asks more of the GPU per frame than a kart racer's mostly-
-  static tracks or an adventure game's individual rooms. Expect the same triage every demanding
-  vitaGL port needs (see [03-vitagl/07-performance-best-practices.md](../03-vitagl/07-performance-best-practices.md)):
-  resolution scale-down, draw-call and texture budget cuts, possibly disabling some effect layers.
-- **Netplay.** The project has its own rollback-netcode architecture document. None of the three
-  reference ports had to solve online play. A Vita transport means real `sceNet` integration — a
-  substantial, separable piece of work with no existing template in this family, reasonable to scope
-  as a post-launch milestone rather than part of initial bring-up.
+- **Widescreen** (`port/widescreen/`) is a CVar-gated system already handling viewport, projection,
+  and HUD-anchoring for 16:9. Vita's 960×544 is near-16:9. v1 work: flip the CVar on, confirm the
+  three affected planes (viewport / projection / HUD anchors) render correctly through vitaGL — not
+  building widescreen support.
+- **60 fps** (`port/interpolation/`) already runs game logic at a fixed, audio-locked 60 Hz tick;
+  render interpolation only *fans out* to multiples (120/180/240) above that. v1 needs none of the
+  fan-out machinery — target the system's own default single-tick-per-render path (`k=1`) and put
+  all real effort into hitting the 16.67 ms/frame budget through standard vitaGL tuning (see
+  [03-vitagl/07-performance-best-practices.md](../03-vitagl/07-performance-best-practices.md)):
+  draw-call count, texture budget, resolution. This is the one genuinely open-ended risk in v1 — a
+  fighting engine with several simultaneous characters and particles is a heavier ask than
+  Ghostship/SpaghettiKart's scenes were.
+- **Netplay is out of scope for v1**, full stop — don't design around it yet. The project's rollback
+  architecture doc is the right starting point when v2 picks it up.
 
-Everything else — the decomp tree being larger than a single-game port's `GAME_SOURCES` list, the
-mechanical link-and-fix loop — is more volume, not more novelty, and is what page 1's "link-and-fix
-loop dominates the timeline" best practice already predicts.
-
-## Recommended sequence (summary)
+## Recommended sequence
 
 1. Build and play the existing desktop port first — the only working baseline once things start
-   rendering wrong on-device.
+   rendering wrong on-device. Confirm widescreen + interpolation both work there with defaults.
 2. Fork; add a `Makefile.vita` templated from SpaghettiKart's (the closest real precedent),
    adapting `TARGET`/`TITLE`/`GAME_SOURCES` to this game's `decomp/src/` + `port/` layout.
-3. Try linking the existing libultraship OpenGL/SDL2 backends against vitaGL/vitashark/VitaSDK's
-   SDL2 as-is first, and only build a dedicated platform shim if that genuinely doesn't compile or
-   run — confirm with Rinnegatamante directly what his actual Vita-side libultraship diff looks like
-   before assuming one is needed.
+3. Link the existing libultraship OpenGL/SDL2 backends against vitaGL/vitashark/VitaSDK's SDL2
+   as-is first; only build a dedicated platform shim if that genuinely fails to compile or run.
+   Confirm with Rinnegatamante what his actual Vita-side libultraship diff contains before assuming
+   one is needed at all.
 4. Iterate to a link — standard Vita-port loop.
 5. LiveArea assets + `vita-elf-create`/`vita-make-fself`/`vita-pack-vpk` packaging.
-6. On-device bring-up: boot, controller mapping, audio, then GPU performance triage against real
-   frame-time numbers.
-7. Netplay, as a stretch goal once local play is solid — wire a Vita `sceNet` transport into the
-   rollback-netcode boundary the project's own architecture doc already defines.
+6. On-device bring-up: boot, controller mapping, audio.
+7. Enable the widescreen CVar; fix whatever doesn't map cleanly to 960×544.
+8. GPU performance triage against real frame-time numbers until 60 fps holds. This is where most
+   of the v1 calendar time goes.
+9. **v2, not now:** wire a Vita `sceNet` transport into the existing rollback-netcode boundary.
