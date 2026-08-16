@@ -24,9 +24,8 @@ project that started it) is built as three layers with a hard boundary between t
    machine, before any device-side build.
 
 The practical consequence: **porting to a new platform is a libultraship problem, not a
-whole-game problem.** Give libultraship a Vita-flavored rendering backend, input backend, and OS
-shim, and the decompiled game code above it — often several hundred thousand lines — needs zero
-changes.
+whole-game problem.** The decompiled game code above it — often several hundred thousand lines —
+calls only libultraship/N64-SDK-shaped functions and needs zero changes for a new target.
 
 ## The build-system pattern
 
@@ -59,15 +58,32 @@ core Vita library stack every one of these ports needs:
   3D
 - the usual `Sce*_stub`/`taihen_stub` set any VitaSDK homebrew links against
 
-### A small OS/input shim replacing the handful of SDK entry points SDL2 doesn't cover
+### Correction (2026-08-16): there is likely no dedicated Vita platform shim at all
 
-Ghostship's `lib/src/osViTable.c` is the clearest example: a few hundred lines reimplementing the
-N64 `libultra` video-interface and controller-init functions (the ones the decomp layer still calls
-directly) using the same SDL2 calls the desktop build already relies on, just built against
-VitaSDK's SDL2 instead of desktop SDL2. This file is small and mechanical to write *once you know
-which entry points need it* — the fastest way to find that list for a new game is to read its
-desktop-platform equivalent of this file (often just called `os.cpp` at the repo root) and see which
-functions it implements that libultraship doesn't already provide generically.
+An earlier draft of this page claimed Ghostship's `lib/src/osViTable.c` was a Vita-specific OS/input
+shim, written by analogy to a template. **That was wrong** — flagged directly by Rinnegatamante
+himself, who ported Ghostship to Vita. `osViTable.c` is N64 Video Interface handling: genuine
+decompiled/reimplemented N64 SDK code, shared across every platform this codebase targets, with
+nothing Vita-specific about it. The claim came from a naive case-insensitive search for "vita" over
+the repo's file list — `osViTable.c` matches that search purely because "Vi" + "Ta" spells "vita",
+a coincidence, not a signal. Worth remembering as a cautionary example on its own: filename
+substring matches are not verification.
+
+Re-examining libultraship's actual backend list (`include/fast/backends/`) turned up `gfx_opengl.h`
+and `gfx_sdl.h` — generic OpenGL and SDL2 rendering/window backends, with **no separate Vita backend
+file anywhere in the tree**. That's consistent with what vitaGL and VitaSDK's SDL2 port are built to
+be (see [section 03](../03-vitagl/README.md)): API-compatible enough with real OpenGL/SDL2 that
+existing backend code written against those APIs can plausibly compile and run against the Vita
+versions largely unmodified. On that reading, most of what makes the Vita build *the Vita build* is
+the `Makefile.vita` linking the existing generic backends against vitaGL/vitashark/VitaSDK's SDL2
+instead of their desktop equivalents — not a bespoke shim file translating N64-shaped calls into
+Vita-shaped ones.
+
+**This section is now a best-effort read from public repo browsing, not something verified against
+Rinnegatamante's actual Vita-side source** (his fork's real `libultraship` history isn't public in a
+way this investigation could inspect directly). Treat "no dedicated shim exists" as the current best
+understanding, not a settled fact — worth confirming directly with him, or against the real diff,
+before relying on it for actual porting work.
 
 ### LiveArea assets and packaging — nothing game-specific
 
@@ -79,9 +95,9 @@ this stage specific to being a decompiled game rather than any other homebrew.
 
 ## Best practices
 
-- **Read the game's own desktop OS shim before writing the Vita one.** It's the fastest way to find
-  the exact, minimal set of functions that need a Vita-side implementation, rather than guessing
-  from the libultraship source at large.
+- **Don't trust a filename substring match as a signal.** The wrong claim this page had to correct
+  came from exactly that. Read what a file actually does before building an explanation around it,
+  especially for a term as short and common-letter-heavy as "vita."
 - **Don't fight CMake for this family of project.** The established convention across every shipped
   port in this family is a standalone `Makefile.vita`, not a VitaSDK CMake toolchain file — that's
   a deliberate, repeated choice across independent ports, not an oversight worth "fixing" by

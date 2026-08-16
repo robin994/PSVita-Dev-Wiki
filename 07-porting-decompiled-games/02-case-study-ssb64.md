@@ -23,12 +23,13 @@ homebrew already in the NeoVitaDB catalog.
 ## Why the methodology applies directly
 
 The repo's own structure already matches the pattern in page 1 almost exactly: a `libultraship/`
-submodule, a `Torch/` submodule, a `port/` directory for the C++ port layer, `yamls/` for the asset
-extraction config, and a top-level `os.cpp` — the desktop OS shim that's the direct template for
-what a Vita `osViTable.c`-equivalent needs to implement. The project's own documentation explicitly
-names **SpaghettiKart** and **Starship** (a Star Fox 64 port) as its architectural reference ports —
-SpaghettiKart being not just architecturally similar but Rinnegatamante's own already-completed Vita
-port, making it the closest thing to a literal template available.
+submodule, a `Torch/` submodule, a `port/` directory for the C++ port layer, and `yamls/` for the
+asset extraction config. The project's own documentation explicitly names **SpaghettiKart** and
+**Starship** (a Star Fox 64 port) as its architectural reference ports — SpaghettiKart being not
+just architecturally similar but Rinnegatamante's own already-completed Vita port, making it the
+closest thing to a literal template available. (See page 1's correction note: there's no verified
+evidence of a dedicated Vita platform shim to hunt for here — the real work is more likely
+concentrated in the `Makefile.vita` and which existing libultraship backend it links against.)
 
 ## Where this game is harder than the existing reference ports
 
@@ -54,8 +55,10 @@ loop dominates the timeline" best practice already predicts.
    rendering wrong on-device.
 2. Fork; add a `Makefile.vita` templated from SpaghettiKart's (the closest real precedent),
    adapting `TARGET`/`TITLE`/`GAME_SOURCES` to this game's `decomp/src/` + `port/` layout.
-3. Port the OS/input shim, using this game's own `os.cpp` to find which entry points need a
-   Vita-side implementation, following Ghostship's `osViTable.c` as the pattern.
+3. Try linking the existing libultraship OpenGL/SDL2 backends against vitaGL/vitashark/VitaSDK's
+   SDL2 as-is first, and only build a dedicated platform shim if that genuinely doesn't compile or
+   run — confirm with Rinnegatamante directly what his actual Vita-side libultraship diff looks like
+   before assuming one is needed.
 4. Iterate to a link — standard Vita-port loop.
 5. LiveArea assets + `vita-elf-create`/`vita-make-fself`/`vita-pack-vpk` packaging.
 6. On-device bring-up: boot, controller mapping, audio, then GPU performance triage against real
