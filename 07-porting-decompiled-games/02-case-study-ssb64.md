@@ -27,9 +27,11 @@ submodule, a `Torch/` submodule, a `port/` directory for the C++ port layer, and
 asset extraction config. The project's own documentation explicitly names **SpaghettiKart** and
 **Starship** (a Star Fox 64 port) as its architectural reference ports — SpaghettiKart being not
 just architecturally similar but Rinnegatamante's own already-completed Vita port, making it the
-closest thing to a literal template available. (See page 1's correction note: there's no verified
-evidence of a dedicated Vita platform shim to hunt for here — the real work is more likely
-concentrated in the `Makefile.vita` and which existing libultraship backend it links against.)
+closest thing to a literal template available. (See page 1's corrections, plural: neither "it's an
+OS shim" nor "the generic backends just work as-is" held up under direct questioning. The real
+rendering work lives inside Rinnegatamante's own `libultraship` fork — confirmed by him to be
+substantially modified, content otherwise unknown from here. That fork, not a Makefile template, is
+the asset worth getting for this port.)
 
 ## v1 scope: 60 fps + widescreen, no netplay
 
@@ -57,10 +59,10 @@ v2. Both v1 features already exist upstream — this is a config-and-tune job, n
    rendering wrong on-device. Confirm widescreen + interpolation both work there with defaults.
 2. Fork; add a `Makefile.vita` templated from SpaghettiKart's (the closest real precedent),
    adapting `TARGET`/`TITLE`/`GAME_SOURCES` to this game's `decomp/src/` + `port/` layout.
-3. Link the existing libultraship OpenGL/SDL2 backends against vitaGL/vitashark/VitaSDK's SDL2
-   as-is first; only build a dedicated platform shim if that genuinely fails to compile or run.
-   Confirm with Rinnegatamante what his actual Vita-side libultraship diff contains before assuming
-   one is needed at all.
+3. Get Rinnegatamante's actual Vita-patched `libultraship` fork (or the equivalent diff) before
+   writing any rendering-layer code — his `gfx_opengl.cpp` already carries real, non-trivial Vita
+   optimizations that don't exist upstream. Don't attempt to rebuild this from the generic backend;
+   confirmed to be the wrong assumption twice already in this planning pass.
 4. Iterate to a link — standard Vita-port loop.
 5. LiveArea assets + `vita-elf-create`/`vita-make-fself`/`vita-pack-vpk` packaging.
 6. On-device bring-up: boot, controller mapping, audio.

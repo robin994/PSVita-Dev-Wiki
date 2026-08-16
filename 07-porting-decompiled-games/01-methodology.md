@@ -69,21 +69,28 @@ the repo's file list — `osViTable.c` matches that search purely because "Vi" +
 a coincidence, not a signal. Worth remembering as a cautionary example on its own: filename
 substring matches are not verification.
 
-Re-examining libultraship's actual backend list (`include/fast/backends/`) turned up `gfx_opengl.h`
-and `gfx_sdl.h` — generic OpenGL and SDL2 rendering/window backends, with **no separate Vita backend
-file anywhere in the tree**. That's consistent with what vitaGL and VitaSDK's SDL2 port are built to
-be (see [section 03](../03-vitagl/README.md)): API-compatible enough with real OpenGL/SDL2 that
-existing backend code written against those APIs can plausibly compile and run against the Vita
-versions largely unmodified. On that reading, most of what makes the Vita build *the Vita build* is
-the `Makefile.vita` linking the existing generic backends against vitaGL/vitashark/VitaSDK's SDL2
-instead of their desktop equivalents — not a bespoke shim file translating N64-shaped calls into
-Vita-shaped ones.
+**Second correction, same conversation:** the follow-up guess — that `gfx_opengl.h`/`gfx_sdl.h` are
+generic and largely unmodified for Vita because no separately-named Vita backend file exists in the
+tree — was also wrong, also flagged directly by Rinnegatamante. His fork's `gfx_opengl.cpp` is a
+real, substantially modified file: it "contains a ton of optimizations" and doesn't use whatever
+the upstream version calls "Prism," which the original does use. The methodology error this time
+was different from the first: checking whether a *differently-named* file existed instead of
+checking whether the *existing* file's content had been changed. Absence of a new filename is not
+evidence of an unmodified file.
 
-**This section is now a best-effort read from public repo browsing, not something verified against
-Rinnegatamante's actual Vita-side source** (his fork's real `libultraship` history isn't public in a
-way this investigation could inspect directly). Treat "no dedicated shim exists" as the current best
-understanding, not a settled fact — worth confirming directly with him, or against the real diff,
-before relying on it for actual porting work.
+**What that changes:** the real Vita-specific engineering isn't in a small OS shim (correction #1)
+and it isn't "basically free because the generic backend already works" (correction #2) — it's real,
+nontrivial rendering-layer work already done once, living in Rinnegatamante's own `libultraship`
+fork, reusable across every game built on that fork rather than something each new port reinvents.
+That reframes where the actual effort in "porting to a new platform is a libultraship problem"
+(above) goes: mostly into whichever fork/branch of libultraship already carries the Vita rendering
+work, not into the target game's own tree at all.
+
+**What this page does not know, and isn't going to guess a third time:** the specific content of
+those `gfx_opengl.cpp` changes, what "Prism" is or why it doesn't apply to Vita, or how much of that
+optimization work is generic-to-Vita versus tied to whichever game it was first written for. That's
+a question for Rinnegatamante or for reading his actual fork, not something recoverable from public
+repo browsing — don't have this page invent an answer next time either.
 
 ### LiveArea assets and packaging — nothing game-specific
 
@@ -95,9 +102,11 @@ this stage specific to being a decompiled game rather than any other homebrew.
 
 ## Best practices
 
-- **Don't trust a filename substring match as a signal.** The wrong claim this page had to correct
-  came from exactly that. Read what a file actually does before building an explanation around it,
-  especially for a term as short and common-letter-heavy as "vita."
+- **Two wrong guesses in a row on the same question means stop guessing.** "It's this file" (filename
+  match, no content read) and "it's basically nothing" (no differently-named file, existing file's
+  content never diffed) were both wrong. The actual answer needed the author. Public repo browsing
+  can tell you the build-system shape; it can't tell you what's been quietly rewritten inside a file
+  that was already there upstream.
 - **Don't fight CMake for this family of project.** The established convention across every shipped
   port in this family is a standalone `Makefile.vita`, not a VitaSDK CMake toolchain file — that's
   a deliberate, repeated choice across independent ports, not an oversight worth "fixing" by
@@ -105,10 +114,9 @@ this stage specific to being a decompiled game rather than any other homebrew.
 - **Treat the asset pipeline as already solved.** If the game already has a working Torch/YAML
   asset-extraction setup for desktop, a Vita port touches none of it — don't spend planning time
   here.
-- **Expect the link-and-fix loop to dominate the timeline, not novel engineering.** Once the
-  Makefile.vita and OS shim exist, most remaining work is the standard Vita-port cycle — build,
-  resolve the next missing symbol, repeat — proportional to codebase size rather than to how hard
-  the game's own logic is to understand.
+- **The reusable asset across games in this family is the author's own patched `libultraship` fork,
+  not a template you rebuild per game.** Budget for obtaining/porting that fork's actual rendering
+  work rather than assuming the generic backends just work once linked against vitaGL.
 - **Budget real GPU performance triage separately from the build-system work.** Getting a build to
   link and boot is mechanical; getting real-time 3D gameplay to hold a stable frame rate on Vita's
   GPU (see [03-vitagl/07-performance-best-practices.md](../03-vitagl/07-performance-best-practices.md))
