@@ -44,12 +44,15 @@ v2. Both v1 features already exist upstream — this is a config-and-tune job, n
   building widescreen support.
 - **60 fps** (`port/interpolation/`) already runs game logic at a fixed, audio-locked 60 Hz tick;
   render interpolation only *fans out* to multiples (120/180/240) above that. v1 needs none of the
-  fan-out machinery — target the system's own default single-tick-per-render path (`k=1`) and put
-  all real effort into hitting the 16.67 ms/frame budget through standard vitaGL tuning (see
-  [03-vitagl/07-performance-best-practices.md](../03-vitagl/07-performance-best-practices.md)):
-  draw-call count, texture budget, resolution. This is the one genuinely open-ended risk in v1 — a
-  fighting engine with several simultaneous characters and particles is a heavier ask than
-  Ghostship/SpaghettiKart's scenes were.
+  fan-out machinery — target the system's own default single-tick-per-render path (`k=1`).
+  **Correction (Rinnegatamante, direct): this is not an open risk.** This exact game already runs
+  at 60 fps on real Vita hardware today, under full N64 emulation, on his own DaedalusX64-vitaGL.
+  Emulation (interpreting/HLE-recompiling RSP microcode and CPU instructions at runtime) is
+  categorically more expensive than a native decompiled build rendering directly through vitaGL —
+  if the emulated path already clears 60 fps on this hardware, the native port has more headroom,
+  not less. Treat GPU throughput as settled; the real work is using the rendering path correctly
+  (see the `libultraship` fork note above), which is an engineering-correctness question, not a
+  raw-performance one.
 - **Netplay is out of scope for v1**, full stop — don't design around it yet. The project's rollback
   architecture doc is the right starting point when v2 picks it up.
 
@@ -67,6 +70,7 @@ v2. Both v1 features already exist upstream — this is a config-and-tune job, n
 5. LiveArea assets + `vita-elf-create`/`vita-make-fself`/`vita-pack-vpk` packaging.
 6. On-device bring-up: boot, controller mapping, audio.
 7. Enable the widescreen CVar; fix whatever doesn't map cleanly to 960×544.
-8. GPU performance triage against real frame-time numbers until 60 fps holds. This is where most
-   of the v1 calendar time goes.
+8. Confirm frame time against the native rendering path (`libultraship` fork). Not expected to be a
+   struggle — DaedalusX64-vitaGL already runs this game at 60 fps on the same hardware under full
+   emulation, so this step is verification, not open-ended tuning.
 9. **v2, not now:** wire a Vita `sceNet` transport into the existing rollback-netcode boundary.
