@@ -187,6 +187,36 @@ the same categories on the next game in this family.
   the signal that it's generated, not missing, is that `git status`/a repo-wide `find` shows no
   source for it, but the CMakeLists has an `add_custom_command(OUTPUT <that exact path> ...)` block
   naming the exact Python tool that makes it.
+- **A `POST_BUILD` asset-staging step (a file copied next to the executable, not compiled into it)
+  that a hand-rolled Makefile never replicates fails silently at runtime, not at build time — and
+  the runtime failure can be a hang, not a crash, making it far harder to spot than the codegen-step
+  case above.** SSB64's CMakeLists zips `libultraship/src/fast/shaders/` into `f3d.o2r` via a
+  `GenerateF3DO2R` custom target and copies it next to the desktop binary in a `POST_BUILD`
+  `add_custom_command`; `Makefile.vita`'s VPK-packaging rule never picked this up, so the bundled
+  VPK simply had no `f3d.o2r`. The bootstrap `ResourceManager::Init()` call that loads it was written
+  to tolerate a missing/empty archive (`allowEmptyPaths=true`, logs and continues) — so the app
+  booted fine, reached rendering ("Window OK"), and kept going for several more log lines. The actual
+  damage was silent: `ResourceManager::Init()` permanently pauses its `BS::thread_pool` if
+  `IsLoaded()` is false at that exact call (a real upstream comment: *"Nothing ever unpauses the
+  thread pool since nothing will ever try to load the archive again"* — an assumption this port's
+  two-phase loading, bootstrap archive now / game archive later via a separate `AddArchive()`,
+  quietly violates). The first real resource load after that hangs the main thread forever inside a
+  `condition_variable::wait()` on the paused pool, with no exception thrown, no crash log, nothing —
+  just a frozen app. Diagnosed by pulling a real-hardware coredump (`ux0:data/.../psp2core-*.psp2dmp`,
+  gzip-compressed ARM `ET_CORE` ELF) and parsing it with a Python-3-ported copy of xerpi's
+  `vita-parse-core` (the upstream tool targets Python 2 + `pyelftools==0.24`; on a modern
+  `pyelftools` the fix is dropping the `elftools.common.py3compat` import, which no longer exists,
+  and reimplementing `str2bytes`/`bytes2str`/byte-vs-`chr` handling locally — the note-parsing logic
+  itself, `ELFFile.iter_segments()`/`iter_notes()`, is unchanged across versions). The coredump's
+  crashed-thread stack (`pthread_cond_wait` → `std::condition_variable::wait` →
+  `std::__atomic_futex_unsigned<...>::_M_load_when_equal`) plus a stop reason that matched none of
+  the known CPU-exception codes (`0x30002`–`0x30004`) was the tell that this was a hang caught by an
+  external dump trigger, not a memory-access crash — worth checking for on *any* "app just freezes,
+  no error" report before assuming it's unfixable without more logging. **General lesson: after
+  porting a CMake `POST_BUILD` step to a hand-rolled Makefile's packaging rule, diff the *complete*
+  file list the CMake step stages against what the Makefile actually bundles — a codegen step with no
+  compiled counterpart is easy to notice missing (build fails); a plain file-copy step is not (build
+  and boot both succeed, and the failure mode may not even be a crash).**
 
 ## Best practices
 
