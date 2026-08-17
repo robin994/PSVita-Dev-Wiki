@@ -333,6 +333,33 @@ the same categories on the next game in this family.
   null until the block actually runs, so an early frame with an invalid size just retries next frame
   instead of crashing, which protects *any* future early-frame caller, not just this one.
 
+- **Reading the actual assert-message string out of the coredump's `.rodata` beats guessing from
+  symbol-adjacent addresses — do it as soon as an `abort()`/`__assert_func` chain shows up.** A fifth
+  real-hardware `psp2dmp`, from the *same rebuilt VPK* that fixed the `DockBuilderSetNodeSize` assert
+  above, hit the identical `abort → raise → __assert_func` shape one call earlier in the frame — but
+  this time the naive nearest-symbol guess on a deeper stack slot ("`ImVector<ImGuiContextHook>::erase`
+  ... called from `ImGui_ImplSDL2_UpdateMonitors`") turned out to be pure coincidence: `objdump -d`
+  right before that "return address" showed unrelated font-atlas code, not a `bl __assert_func`, and a
+  `grep` for `AddContextHook` across the whole tree found only its own definition — nothing ever
+  populates `g.Hooks`, so that erase loop's body can never even execute. The reliable path instead was
+  reading the raw string bytes at the `__assert_func` call's own `func`/`failedexpr` argument addresses
+  directly out of the *static* ELF's `.rodata` (`objdump -s --start-address=... --stop-address=...`,
+  using the same tool-computed static offset from the entry two above) — which spelled out the exact
+  literal condition text: `g.IO.DisplaySize.x >= 0.0f && g.IO.DisplaySize.y >= 0.0f && "Invalid
+  DisplaySize value!"`, inside `ImGui::ErrorCheckNewFrameSanityChecks()` — pinpointing the failing
+  `IM_ASSERT` line in `imgui.cpp` with certainty a stack-address guess never could. Root cause:
+  `ImGui_ImplSDL2_NewFrame()` assigns `io.DisplaySize` from `SDL_GetWindowSize()` unconditionally, and
+  VitaSDK's SDL2 port can hit an internal error path (an `SDL_SetError()` call was visible nearby in
+  the same stack dump) that leaves the output ints as whatever was already on the stack instead of
+  writing real values — not necessarily zero, so even ImGui's own `>= 0.0f` guard doesn't catch it.
+  **Fixed at the backend**: only update `io.DisplaySize`/`DisplayFramebufferScale` when both dimensions
+  come back genuinely positive, same "skip and let it settle" pattern as the entry above, this time one
+  level earlier (`ImGui_ImplSDL2_NewFrame()` runs before `Gui::DrawMenu()`'s dock setup even starts).
+  **General lesson: don't stop at "the crash is inside `IM_ASSERT`" — the four string arguments to
+  `__assert_func` (file, line, func, failedexpr) are sitting in that frame's own stack slots as
+  `.rodata` pointers; dumping their actual text is cheap and removes all doubt about which of a
+  function's several assert lines actually fired, versus inferring it from context.**
+
 ## Best practices
 
 - **Two wrong guesses in a row on the same question means stop guessing.** "It's this file" (filename
