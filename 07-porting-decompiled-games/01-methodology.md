@@ -248,6 +248,30 @@ the same categories on the next game in this family.
   own files (not just third-party vendored code) and replicate each one in the Makefile explicitly,
   since none of them will fail loudly anymore if missed.**
 
+- **A vendored Vita rendering layer merged from another game's fork can leave that game's own
+  hardcoded app name behind in a method that looks generic.** `Ship::Context::GetAppBundlePath()`
+  (distinct from `GetAppDirectoryPath()`, which this port's Vita branch already correctly returns
+  `"ux0:data/battleship"` for) was still returning Rinnegatamante's own `"ux0:data/ghostship"` — his
+  game's directory, carried over unnoticed through the libultraship merge because the method compiles
+  and links fine either way; nothing catches a *wrong but valid-looking* path at build time. The
+  practical effect: every `RealAppBundlePath()`-based lookup (`PortLocateFile`'s second search
+  candidate, `port.cpp`'s mods-dir probe, `first_run.cpp`'s Torch/config search candidates) silently
+  missed on Vita and fell through to whatever fallback came next — for the `f3d.o2r` bootstrap shader
+  archive specifically, that fallback was a bare relative `"./f3d.o2r"`, which real hardware's archive
+  loader can't open (unlike the Vita3K emulator, which resolved it as a happy accident and proceeded
+  fine) — leaving `ResourceManager::Init()`'s bootstrap archive unloaded and pausing the thread pool
+  forever (the exact hang from the entry above), even *after* bundling `f3d.o2r` correctly into the
+  VPK. The two bugs looked identical from the crash (same `condition_variable::wait` stack) — the
+  second one only surfaced by testing the first fix on real hardware, since Vita3K's looser path
+  handling masked it. **Fixed at the source**: `GetAppBundlePath()` now returns `"app0:"` (the
+  read-only VPK-mounted partition — matches `ArchiveManager::Init()`'s existing
+  `archive.starts_with("app0")` prefix-strip special case, which expects exactly this format).
+  **General lesson: when vendoring a rendering/platform layer from a sibling game's fork, grep the
+  merged files for the *other* game's own name/IDs/paths** (`ghostship`, its title ID, its bundled
+  filenames) as a dedicated pass — these don't fail loudly, they just quietly point at the wrong
+  place, and a method name alone (`GetAppBundlePath`) gives no hint it's still scoped to someone
+  else's install.
+
 ## Best practices
 
 - **Two wrong guesses in a row on the same question means stop guessing.** "It's this file" (filename
