@@ -298,6 +298,41 @@ the same categories on the next game in this family.
   captures, consistent with different points in a long but finite write) before assuming a hang is a
   logic bug rather than an I/O-bound stall, especially on removable storage.**
 
+- **A coredump-parsing tool's "nearest known symbol" address resolution can be flatly wrong once
+  the caller is on the wrong side of a runtime-vs-static-file address offset — verify with a second,
+  ground-truth tool before trusting the narrative it builds.** After the two real deadlocks above were
+  fixed, a fourth real-hardware `psp2dmp` showed a genuine CPU exception (not the same recurring hang
+  signature) with `vita-parse-core`'s own printed disassembly correctly landing on `_kill_r`
+  (newlib's `kill()`) — but its raw "STACK CONTENTS AROUND SP" dump, fed through the *same*
+  address-to-symbol heuristic, produced what looked like a plausible `abort → raise → __assert_func →
+  DockBuilderCopyWindowSettings → Gui::DrawMenu` chain. Feeding those exact addresses to
+  `arm-vita-eabi-addr2line -e battleship.elf.unstripped.elf` **directly** returned unrelated string
+  literals (`.LC209` in `CollisionFactory.cpp`) — because those addresses were the tool's *runtime*
+  (coredump) addresses, and `addr2line` needs the *static ELF's own* vaddr numbering; the fix is
+  re-deriving the static address from the offset the tool itself already prints
+  (`"battleship.elf@1 + 0xNNNNNN"` → static addr = `0x81000000 + 0xNNNNNN` for this build's link base,
+  confirmed by cross-checking against `objdump -d` output around the candidate address to see it land
+  cleanly on a real instruction/function boundary, not mid-instruction garbage). Once corrected, the
+  same stack values addr2line'd to the *exact same* chain the tool's own (correctly-offset) labels had
+  suggested — so the tool wasn't lying, the mistake was mine, querying it with the wrong address space.
+  **General lesson: when cross-checking a coredump tool's symbol labels with `addr2line`/`objdump`
+  directly, use the *offset the tool already computed* against the static file's own load base, never
+  the raw coredump address — and treat a "nearest symbol" match to a `.rodata` string-literal label
+  (`.LC123`) as a strong signal the address fed in was wrong, not that the crash landed in the weeds.**
+- **`ImGui::DockBuilderSetNodeSize()` asserts on a non-positive size (`IM_ASSERT(size.x > 0.0f && size.y
+  > 0.0f)`), and the very first `Gui::StartDraw()`/`DrawMenu()` call in an app's life can race a
+  main-viewport size that hasn't settled yet** — the assert fired here specifically because the
+  boot-time "Loading..." screen added for the entry above forced that first call earlier than before
+  (previously the first real frame happened deep enough into the game loop that window geometry had
+  long since settled, so this was a latent bug nothing had ever triggered). Root-caused precisely by
+  chasing the corrected addr2line chain from the entry above straight to
+  `Gui.cpp:528: ImGui::DockBuilderSetNodeSize(dockId, ImVec2(viewport->Size.x, viewport->Size.y))` and
+  `imgui.cpp:19760`'s assert. **Fixed at the call site, not by walking back the loading screen**: gated
+  the one-time dock-node setup in `Gui::DrawMenu()` on `viewport->Size.x > 0.0f && viewport->Size.y >
+  0.0f` in addition to the existing `!DockBuilderGetNode(dockId)` check — `DockBuilderGetNode` stays
+  null until the block actually runs, so an early frame with an invalid size just retries next frame
+  instead of crashing, which protects *any* future early-frame caller, not just this one.
+
 ## Best practices
 
 - **Two wrong guesses in a row on the same question means stop guessing.** "It's this file" (filename
