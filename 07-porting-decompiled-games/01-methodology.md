@@ -360,6 +360,23 @@ the same categories on the next game in this family.
   `.rodata` pointers; dumping their actual text is cheap and removes all doubt about which of a
   function's several assert lines actually fired, versus inferring it from context.**
 
+- **A "leave it untouched if invalid" guard isn't actually safe unless the untouched default is itself
+  valid — check what the field's own constructor sets it to.** The `io.DisplaySize` fix above (only
+  assign when `SDL_GetWindowSize()` returns positive values, otherwise leave `io.DisplaySize` alone)
+  still crashed on the very next real-hardware test, with the *identical* assert. `ImGuiIO`'s own
+  constructor (`imgui.cpp`'s `DisplaySize = ImVec2(-1.0f, -1.0f);`) initializes it to `(-1,-1)`
+  specifically as ImGui's own "not yet configured by the application" sentinel — so "leave it
+  untouched" on a first-ever failing call left that already-invalid negative default in place, and
+  `ErrorCheckNewFrameSanityChecks()`'s `>= 0.0f` assert fired exactly as before. Confirmed via the same
+  `.rodata`-string-extraction technique as the entry above: identical string addresses, identical
+  assert text, on a coredump from the rebuilt VPK. **Fixed by falling back to `(0,0)` instead of
+  leaving the stale value** — `0.0f >= 0.0f` passes the check, and a zero-sized display just means
+  ImGui skips meaningful rendering for that one frame rather than crashing. **General lesson: a defensive
+  "skip the update, keep the old value" guard is only as safe as whatever the old value could
+  legitimately be — for a field with a deliberate invalid-by-default sentinel (common in APIs that want
+  to detect "caller never configured this"), skipping the write doesn't skip the invalid state, it just
+  preserves it. Check the type's own default/constructor before trusting a skip-on-failure guard.**
+
 ## Best practices
 
 - **Two wrong guesses in a row on the same question means stop guessing.** "It's this file" (filename
