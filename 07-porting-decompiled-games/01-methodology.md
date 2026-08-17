@@ -218,6 +218,36 @@ the same categories on the next game in this family.
   compiled counterpart is easy to notice missing (build fails); a plain file-copy step is not (build
   and boot both succeed, and the failure mode may not even be a crash).**
 
+- **`-Wl,-q,--allow-multiple-definition` (added to silence one legitimate duplicate-symbol case) turns
+  every *other* accidental duplicate global symbol into a silent runtime data-corruption bug instead
+  of a build failure.** SSB64 ships two source files that both define a global array under the same
+  name for different game releases — `RelocFileTable.us.cpp` / `RelocFileTable.jp.cpp`, each defining
+  `gRelocFileTable[]` at a different length (2132 vs 2107) selected by a compile-time
+  `RELOC_FILE_COUNT` macro. CMakeLists.txt handles this explicitly: `list(FILTER SSB64_SRC_PORT
+  EXCLUDE REGEX ".../RelocFileTable\\.(us|jp)\\.cpp$")` then adds back only the file matching the
+  selected version, with a comment spelling out why. A hand-rolled Makefile's directory-wide glob for
+  `port/resource/*.cpp` has no equivalent selection step and pulls in *both* — normally a hard
+  "multiple definition of `gRelocFileTable`" link error, except `--allow-multiple-definition` was
+  already on the link line (for an unrelated, legitimate case elsewhere), so the linker silently kept
+  one definition and discarded the other with no diagnostic at all. The build succeeded, the app
+  booted and rendered fine, and gameplay proceeded well into the first real scene load before failing
+  — because `RELOC_FILE_COUNT` (2132, the US value) is a compile-time constant baked independently
+  into *every other* translation unit that reads the table, while the actual backing array that won
+  the link was the *shorter* JP one (2107 real entries): every index at or past 2107 read past the
+  end of that array into zeroed memory and came back NULL, and the entries *below* 2107 silently held
+  the wrong release's data (JP's mapping at a given numeric id, not US's) rather than erroring either.
+  Root-caused by comparing a live process's actual runtime array contents (added a one-off boot-time
+  log dumping `RELOC_FILE_COUNT` and `gRelocFileTable[i]` at a few sample indices, tested on the
+  Vita3K emulator for a fast iteration loop) against the same indices read two other ways — `grep` on
+  the generated `.cpp` source and `strings` on the final linked ELF's `.rodata` — which agreed with
+  each other but *not* with the runtime log; that three-way mismatch (source ✓, static binary ✓,
+  runtime ✗) was the tell that pointed at "wrong object file won the link," not a data-generation or
+  logic bug. **General lesson: `--allow-multiple-definition` is a blunt instrument — it doesn't
+  distinguish the one duplicate you're expecting from any other. After adding it, audit the CMakeLists
+  for every `list(FILTER ... EXCLUDE REGEX ...)` / conditional-source-selection block near the port's
+  own files (not just third-party vendored code) and replicate each one in the Makefile explicitly,
+  since none of them will fail loudly anymore if missed.**
+
 ## Best practices
 
 - **Two wrong guesses in a row on the same question means stop guessing.** "It's this file" (filename
