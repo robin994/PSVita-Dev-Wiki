@@ -377,6 +377,22 @@ the same categories on the next game in this family.
   to detect "caller never configured this"), skipping the write doesn't skip the invalid state, it just
   preserves it. Check the type's own default/constructor before trusting a skip-on-failure guard.**
 
+- **A recurring "stuck mid-`sceIoWrite`" coredump signature isn't always the slow-flush issue two
+  entries above — confirm with the user whether it's actually slow (finite) or a genuine permanent
+  hang before assuming the same root cause applies.** After the `flush_on(err)` fix, real-hardware
+  testing progressed much further (into actual game-thread/coroutine creation) before hitting the
+  *identical* `fflush → __sfvwrite_r → __swrite → sceIoWrite` stack shape again. Asked directly whether
+  waiting longer (a minute or two) let it continue — it didn't; this was a genuine permanent hang, not
+  slow disk I/O. `port_log()` (`port/port_log.c`) writes to a single shared `FILE*` with **zero
+  synchronization**, and by this point in boot several real OS threads (audio, DMA/scheduler, the main
+  thread) are all calling it concurrently — consistent with two threads racing VitaSDK newlib's
+  internal per-`FILE` lock with no forward progress. **Fixed by wrapping every `port_log()` file
+  operation in a `pthread_mutex_t`** — cheap, and correct regardless of whether newlib's own locking
+  was actually the culprit, since unsynchronized multi-threaded writes to one `FILE*` are undefined
+  behavior on any platform. **General lesson: the same crash signature recurring after a fix doesn't
+  necessarily mean the fix failed — a quick "does waiting help?" check separates "still the same slow
+  I/O" from "a different, newly-reachable bug that happens to look identical at the syscall level."**
+
 ## Best practices
 
 - **Two wrong guesses in a row on the same question means stop guessing.** "It's this file" (filename
