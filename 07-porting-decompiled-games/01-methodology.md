@@ -418,6 +418,27 @@ the same categories on the next game in this family.
   bugs specifically (as opposed to code-address analysis, where the static-offset correction from
   entries above still applies).**
 
+- **Two targeted mitigations in a row (mutex, force-first-flush-early) left the exact same coredump
+  signature unchanged — byte-identical buffer contents, not just the same call stack — which was the
+  signal to stop patching around the symptom and remove the game thread from the I/O path entirely.**
+  Re-dumping the write's buffer contents after the "force first flush early" fix showed the *same*
+  1024 bytes of accumulated log text as before, meaning stdio's second buffer-full flush still landed
+  at the identical logical point — proof the stall was never about "first write to a freshly-truncated
+  file," just genuinely slow synchronous disk I/O on this real hardware's memory card, reliably slow
+  enough to trip whatever threshold the automatic-psp2dmp watchdog uses (stop reason `0x10006` has
+  never once corresponded to a real CPU exception across any crash this port has hit — only ever to a
+  thread parked inside a write syscall, consistent with an external "no scheduler progress" monitor
+  rather than a hardware trap). **Fixed by moving all `port_log()` disk I/O off every calling thread
+  entirely**: `port_log()` now only `vsnprintf`s into a stack buffer and pushes it onto a small
+  fixed-size ring buffer (in-memory, no I/O, drops the line instead of blocking if the queue is ever
+  full) guarded by a mutex + condvar; a single dedicated writer thread drains the queue and does the
+  actual `fputs`/eventual `fflush`. Whatever the SD card's real per-write latency is, it can no longer
+  make the *watched* thread block on it — a structural fix instead of a third attempt to dodge the
+  specific timing window. **General lesson: when a fix that targets a specific hypothesis (locking,
+  first-write cost) leaves the *exact* same evidence unchanged — not just the same symptom, but literally
+  the same bytes in the same buffer — that's a sign the hypothesis was never the mechanism, and it's
+  time to remove the suspect operation from the critical path rather than keep tuning around it.**
+
 ## Best practices
 
 - **Two wrong guesses in a row on the same question means stop guessing.** "It's this file" (filename
