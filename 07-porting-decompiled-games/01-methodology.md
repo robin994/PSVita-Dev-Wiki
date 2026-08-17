@@ -393,6 +393,31 @@ the same categories on the next game in this family.
   necessarily mean the fix failed — a quick "does waiting help?" check separates "still the same slow
   I/O" from "a different, newly-reachable bug that happens to look identical at the syscall level."**
 
+- **When a coredump shows a thread stuck inside a `write()`/`fflush()` syscall repeatedly, at
+  byte-identical register/stack values across independent runs, don't stop at "it's stuck" — dump the
+  actual buffer contents from the coredump's own memory to see what was being written.** The
+  `port_log()` mutex fix (entry above) didn't change anything: the *next* real-hardware test hit the
+  identical `fflush → __sfvwrite_r → __swrite → sceIoWrite` stack, at the exact same stack address and
+  file-buffer pointer, as before the fix — inconsistent with a timing-dependent race (those don't
+  usually reproduce byte-for-byte). `vita-parse-core`'s `CoreParser.read_vaddr(addr, size)` reads raw
+  bytes straight out of the coredump's own `PT_LOAD` segments by runtime virtual address (no static-ELF
+  offset math needed here, unlike code addresses — this is *data* the process itself wrote, not
+  something resolved against the static file); pointing it at the write's own buffer pointer register
+  (`R1`) for the write's own size (`R2`, `0x400`/1024 bytes here) dumped the exact log text that was
+  queued — which matched `ssb64.log`'s actual on-disk content byte-for-byte, confirming this was stdio's
+  *very first* buffer-full flush of the freshly-`fopen(path, "w")`'d log file, always landing at the
+  same point deep in boot (mid game-thread creation) because Vita homebrew has no ASLR and the exact
+  same call sequence runs every launch. **Fixed by forcing that first flush to happen immediately in
+  `port_log_init()`** (write one byte, `fflush()` immediately after `fopen()`) instead of letting it
+  land wherever the buffer naturally fills on its own — extending a just-truncated file involves
+  one-time FAT/cluster-allocation work on some memory cards that a scheduler-watchdog can trip over if
+  it happens to land during a timing-sensitive window later in boot; paying that cost immediately, with
+  nothing else running yet, means every later flush is an ordinary append instead. **General lesson:
+  `CoreParser.read_vaddr()` turns "some thread is stuck writing something" into "here is the literal
+  content it was writing" — much stronger evidence than register/backtrace analysis alone for I/O-stall
+  bugs specifically (as opposed to code-address analysis, where the static-offset correction from
+  entries above still applies).**
+
 ## Best practices
 
 - **Two wrong guesses in a row on the same question means stop guessing.** "It's this file" (filename
