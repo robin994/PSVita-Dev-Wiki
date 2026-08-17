@@ -272,6 +272,32 @@ the same categories on the next game in this family.
   place, and a method name alone (`GetAppBundlePath`) gives no hint it's still scoped to someone
   else's install.
 
+- **`spdlog::async_logger::flush_on(level)` is not fire-and-forget — its `flush()` blocks the calling
+  thread until the background worker drains its queue *and* the OS-level write completes — and a
+  release-build default of `flush_on(info)` combined with slow removable media turns routine logging
+  into a long, silent stall that looks exactly like a hang.** Two earlier bugs this session (a missing
+  `f3d.o2r` bundle, a leftover hardcoded app path from a merged fork) each produced a genuine thread
+  stuck forever in `condition_variable::wait`, diagnosed from a real-hardware `psp2dmp` coredump. After
+  fixing both, a *third* coredump from the same "black screen, then a psp2dmp appears" symptom showed
+  a completely different signature: the main thread caught mid-syscall inside
+  `__sfvwrite_r → __swrite → _write_r → sceIoWrite` — not stuck forever, just doing a slow, blocking
+  write. `Ship::Context::InitLogging()`'s release-build branch uses `spdlog::async_logger` (a
+  background-thread logger, `async_overflow_policy::block`) with `flush_on(spdlog::level::info)`.
+  `ArchiveManager::Init()` logs per-resource at info while indexing a multi-thousand-entry `.o2r`, and
+  each of those calls forces a synchronous wait for the background worker to catch up and fsync to
+  disk — fine on a desktop SSD or Vita3K's host-filesystem-backed storage (both fast enough that this
+  is invisible), but real Vita hardware's microSD write/fsync latency compounds across potentially
+  thousands of forced flushes into a stall long enough to look frozen, with nothing on screen to say
+  otherwise. **Fixed two ways**: lowered the Vita build's flush level to `err` (routine info-level
+  archive-loading spam no longer forces a synchronous wait — flush still happens immediately for
+  anything that actually matters), and added a two-frame "Loading..." ImGui draw right after window
+  init and before the archive-loading block, so a load that's still slow at least doesn't read as a
+  black, possibly-crashed screen. **General lesson: a coredump's *stack shape alone* doesn't tell you
+  "deadlock" vs "slow blocking syscall" — check whether the exact same crash address recurs identically
+  across multiple captures (this session's real deadlocks did; this one's addresses drifted between
+  captures, consistent with different points in a long but finite write) before assuming a hang is a
+  logic bug rather than an I/O-bound stall, especially on removable storage.**
+
 ## Best practices
 
 - **Two wrong guesses in a row on the same question means stop guessing.** "It's this file" (filename
