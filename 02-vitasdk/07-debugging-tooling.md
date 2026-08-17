@@ -23,11 +23,12 @@ tight iteration. Two things speed this up, usable independently:
   server, or any FTP client/`curl -T`) and relaunching the app picks up a new build without going
   through the installer again. See [Homebrew app anatomy](03-homebrew-app-anatomy.md) for how the
   title ID maps to that path.
-- **`vitacompanion`** — a plugin that keeps a background FTP server running on the Vita at all times
-  and listens for a couple of remote commands over a plain TCP port (`1338` by default): `destroy`
-  (kill the currently running homebrew) and `launch <TITLEID>`. Combined with the `eboot.bin`-replace
-  trick above, a single CMake custom target can close the running app, push the new build, and
-  relaunch it in one step:
+- **[`vitacompanion`](https://github.com/devnoname120/vitacompanion)** — a taiHEN plugin pair (one
+  kernel module, one user module) that keeps a background FTP server and a remote command listener
+  running on the Vita at all times, independent of whatever homebrew is currently running. Combined
+  with the `eboot.bin`-replace trick above, a single CMake custom target (or, for a hand-rolled
+  Makefile build with no CMake target system, just the three commands run directly from a shell) can
+  close the running app, push the new build, and relaunch it in one step:
 
   ```cmake
   set(PSVITAIP "192.168.0.198" CACHE STRING "PSVita IP (for FTP access)")
@@ -39,8 +40,87 @@ tight iteration. Two things speed this up, usable independently:
                     )
   ```
 
-  Run with `cmake --build build --target send`. Requires `vitacompanion` installed as a taiHEN
-  plugin on the device first — see [Kernel plugins & taiHEN](06-kernel-plugins-taihen.md).
+  Run with `cmake --build build --target send`. Or, without CMake, the same three steps as plain
+  shell commands (works from any build system, including a standalone `Makefile.vita`):
+
+  ```sh
+  echo destroy | nc -w3 $VITAIP 1338
+  curl -T eboot.bin ftp://$VITAIP:1337/ux0:/app/$TITLEID/eboot.bin
+  echo "launch $TITLEID" | nc -w3 $VITAIP 1338
+  ```
+
+  ### Build & install
+
+  ```sh
+  git clone https://github.com/devnoname120/vitacompanion
+  cd vitacompanion && mkdir build && cd build
+  cmake .. && make
+  ```
+
+  Copy both `vitacompanion.suprx` and `vitacompanion_kernel.skprx` to `ur0:tai/` (VitaShell → SELECT
+  to start its FTP server, or any FTP client), then add both to `ur0:tai/config.txt`:
+
+  ```
+  *KERNEL
+  ur0:tai/vitacompanion_kernel.skprx
+
+  *main
+  ur0:tai/vitacompanion.suprx
+  ```
+
+  The kernel module must be loaded — the user module imports its input-simulation API from it and
+  doesn't load it on its own. Reboot after installing or replacing either module so no older copy is
+  left resident. To run two side-by-side copies (e.g. a stable one plus a build under test) without
+  the second clobbering the first, build with distinct ports/module name:
+  `cmake .. -DVITACOMPANION_FTP_PORT=1340 -DVITACOMPANION_CMD_PORT=1341
+  -DVITACOMPANION_MODULE_NAME=vitacompanion_test`.
+
+  ### FTP server (port `1337`)
+
+  Vita-style paths (`ux0:/somedir/`) and FTP-absolute paths (`/ux0:/somedir/`) both work; standard
+  `PASV`/`EPSV`/`PORT`/`EPRT`, ASCII/binary transfer, and resume/append are all supported, so any
+  generic FTP client works, not just `curl`. To retrieve a file (e.g. pulling a `.psp2dmp` — see
+  below — without first copying it into an app's own data directory):
+
+  ```sh
+  curl -s -o local.psp2dmp ftp://$VITAIP:1337/ux0:/data/psp2core-....psp2dmp
+  curl -s ftp://$VITAIP:1337/ux0:/data/          # directory listing
+  ```
+
+  ### Command server (port `1338`) — full reference
+
+  One command per line (or `;`-separated for a chain, trailing `;` optional), sent over a raw TCP
+  connection (`nc $VITAIP 1338` or equivalent):
+
+  | Command   | Arguments                      | Effect |
+  | --------- | ------------------------------- | ------ |
+  | `help`    | —                                | list commands |
+  | `version` | —                                | print the loaded module's version |
+  | `destroy` | —                                | kill all running applications |
+  | `launch`  | `<TITLEID>`                      | launch an installed app by title ID |
+  | `kill`    | `<TITLEID>`                      | kill one specific app by title ID |
+  | `reboot`  | —                                | reboot the console |
+  | `screen`  | `on` / `off`                     | turn the display on or off |
+  | `nosleep` | `on` / `off` / `status`          | toggle automatic-suspend prevention (on by default at boot) |
+  | `press` / `release` | button, stick, or touch target | synthetic input injection (below) |
+  | `wait`    | duration, e.g. `500ms`, `3s`     | delay before the next chained command |
+
+  Synthetic input is genuinely useful for scripted, repeatable UI-flow testing (navigating a menu the
+  same way on every run rather than doing it by hand each time) without needing to touch the console:
+
+  ```sh
+  # Buttons
+  echo 'press cross; wait 100ms; release cross' | nc $VITAIP 1338
+  # Analog sticks - coordinates are 0-255, 128 = center
+  echo 'press left-stick 0 128; wait 200ms; release left-stick' | nc $VITAIP 1338
+  # Touch - 4 independently tracked slots (0-3), raw 1920x1088 touch space;
+  # repeating `press` on an active slot moves that touch, preserving its contact ID
+  echo 'press front-touch 0 960 544; release front-touch 0' | nc $VITAIP 1338
+  echo 'release all' | nc $VITAIP 1338   # clear every synthetic input at once
+  ```
+
+  Button names: `select`, `start`, `up`/`right`/`down`/`left`, `l`/`r`/`l1`/`r1`/`l2`/`r2`/`l3`/`r3`,
+  `triangle`, `circle`, `cross` (`x` also works), `square`, `ps`.
 
 ## Real-time on-device logging
 
