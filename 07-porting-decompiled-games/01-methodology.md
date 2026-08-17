@@ -441,20 +441,24 @@ the same categories on the next game in this family.
 
 ## Best practices
 
-- **For on-device logging, always emit through `sceClibPrintf` (`<psp2/kernel/clib.h>`), not just
-  `fprintf`/`fputs` to a file.** `sceClibPrintf` goes straight through a `SceLibKernel` syscall — no
-  newlib stdio buffering, no filesystem, no `fflush`/`write()` chain to ever block or get stuck in.
-  Every real-hardware stall this project chased (see the `port_log()` entries above — mutex fix,
-  force-first-flush-early fix, eventually the full async-writer-thread rewrite) traced back to exactly
-  that chain: a thread calling into stdio's file-write path and blocking on real hardware's I/O
-  latency, sometimes long enough to trip an external watchdog. `sceClibPrintf` sidesteps the entire
-  class of bug by construction, at the cost of not persisting to a file on its own (a live capture
-  method — UART, a debug-screen plugin, VitaShell's network log, etc. — is needed to actually see the
-  output). The pattern that works well: call `sceClibPrintf` unconditionally and immediately for every
-  log line (cheap, always current, never blocks), and if a persistent on-disk log is also wanted for
-  post-mortem review via coredump/VitaShell, keep that as a *separate*, best-effort path (e.g. an
-  async queue drained by a dedicated writer thread, never the calling thread itself) — never make the
-  file write the only copy, and never let it block whatever thread is producing the log line.
+- **For on-device logging, emit through `sceClibPrintf` (`<psp2/kernel/clib.h>`) instead of
+  `fprintf`/`fputs` to a file — but from exactly *one* dedicated thread, not from every caller.**
+  `sceClibPrintf` goes straight through a `SceLibKernel` syscall — no newlib stdio buffering, no
+  filesystem, no `fflush`/`write()` chain to get stuck in the way file logging repeatedly did on this
+  project (see the `port_log()` entries above). It is **not**, however, free of blocking risk when
+  called concurrently: the first real-hardware test after switching to it hit a *new* stall, with the
+  main thread genuinely parked in a `SceLibKernel` wait call, the queued log line and the kernel UID it
+  was waiting on both sitting on `port_log()`'s own stack frame in the coredump — landing exactly when
+  several OS threads (audio, DMA/scheduler, controller) all spun up in a burst during coroutine boot
+  and each called `sceClibPrintf` at once. Consistent with kernel-side serialization on the shared
+  debug-output channel under concurrent callers — the same "many threads hit a slow shared I/O path at
+  once" shape as the file-write stalls, just on a different resource. **Fixed by funneling every
+  `sceClibPrintf` call through the same single dedicated writer thread already used for the async file
+  queue**, instead of calling it directly from whichever thread produced the log line — removing the
+  inter-thread contention entirely rather than trying to make concurrent calls to it safe. General
+  pattern: format the line and enqueue it (fast, in-memory, no syscalls) from any caller; have exactly
+  one thread dequeue and do *all* the actual I/O — both the `sceClibPrintf` call and the file write —
+  serially. Never call `sceClibPrintf` directly from multiple threads without this funnel.
 - **Two wrong guesses in a row on the same question means stop guessing.** "It's this file" (filename
   match, no content read) and "it's basically nothing" (no differently-named file, existing file's
   content never diffed) were both wrong. The actual answer needed the author. Public repo browsing
