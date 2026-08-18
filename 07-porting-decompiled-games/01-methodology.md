@@ -439,6 +439,39 @@ the same categories on the next game in this family.
   the same bytes in the same buffer — that's a sign the hypothesis was never the mechanism, and it's
   time to remove the suspect operation from the critical path rather than keep tuning around it.**
 
+## Real-hardware bring-up: two constraints affecting this whole port family
+
+Once a from-scratch build like the one above actually links and boots on real hardware, two more
+issues showed up (confirmed via real-hardware coredump analysis, on SSB64/BattleShip specifically)
+that aren't SSB64-specific bugs — they follow directly from architectural choices this *entire*
+family of port shares, so budget for both on the next game too, not just this one.
+
+- **Every port in this family emulates the original console's cooperative multi-threading
+  (`osCreateThread`/`osStartThread` and friends) on top of manually-swapped coroutine/fiber stacks,
+  not real `sceKernelCreateThread` threads per logical thread** — that's inherent to how this
+  pattern works, not an SSB64-specific implementation detail. See
+  [Kernel/core APIs: coroutines, fibers & manually-swapped stacks](../02-vitasdk/04-kernel-core-apis.md#coroutines-fibers--manually-swapped-stacks)
+  for the confirmed, general real-hardware constraint this creates (no Vita kernel syscall — direct
+  or via a lazily-created kernel object inside a common library call — can safely run on such a
+  stack) and the fix pattern that's confirmed to work for the lazy-creation case specifically. Every
+  port using this pattern is exposed to this from the moment its coroutine system starts running any
+  of the original console's thread-creation code, independent of which specific game it is.
+- **This game family's N64 audio library (`sys/audio.c`) expects `sSYAudioCurrentSettings` to be
+  populated by a `sSYAudioCurrentSettings = dSYAudioPublicSettings;` copy that happens inside the
+  *original* N64 audio thread's message loop** — if a port's bootstrap calls the audio init path
+  directly rather than routing through that original thread's loop (a very natural thing to do when
+  adapting a cooperative-threading pattern to a coroutine model, and confirmed to be exactly what
+  happened here), that copy silently never happens, and every subsequent `alHeapAlloc()` in the
+  entire audio pipeline runs against a NULL-base, zero-size heap. This is specific to games sharing
+  this N64 audio library lineage (which this whole port family does), not a Vita platform issue —
+  the fix is adding the missing copy explicitly, once, at the top of whatever function first touches
+  the audio heap in the port's own bootstrap path.
+- Separately, if this family's asset pipeline uses zip-based archives (`.o2r`/`.otr` via `libzip`)
+  and you hit a real-hardware-only crash inside zlib itself, see
+  [Prebuilt library gotchas: VitaSDK's prebuilt zlib genuinely compiles with real ARM NEON instructions](../02-vitasdk/14-prebuilt-library-gotchas.md#vitasdks-prebuilt-zlib-genuinely-compiles-with-real-arm-neon-instructions) —
+  a confirmed, still-partially-open finding from this same bring-up, general to anyone using this
+  archive format on Vita rather than specific to one game.
+
 ## Best practices
 
 - **For on-device logging, emit through `sceClibPrintf` (`<psp2/kernel/clib.h>`) instead of

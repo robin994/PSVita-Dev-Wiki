@@ -17,7 +17,7 @@ implementation lives in the console's firmware), and CMake integration (`vita.to
 1. [Overview & toolchain](01-overview-toolchain.md) — what VitaSDK actually is, install layout, the cross-compiler
 2. [Project setup & build system](02-project-setup-build-system.md) — CMake integration, common pitfalls, linking gotchas
 3. [Homebrew app anatomy](03-homebrew-app-anatomy.md) — eboot.bin, param.sfo, VPK structure, title IDs
-4. [Kernel/core APIs](04-kernel-core-apis.md) — threading, memory, file I/O, module loading
+4. [Kernel/core APIs](04-kernel-core-apis.md) — threading, coroutines/fibers and the real-hardware-only kernel-syscall constraint they run into, memory, file I/O, module loading
 5. [System libraries](05-system-libraries.md) — display, input, audio, dialogs, app management
 6. [Kernel plugins & taiHEN](06-kernel-plugins-taihen.md) — when and how homebrew reaches below user mode
 7. [Debugging & tooling](07-debugging-tooling.md) — VitaShell, real-time logging, `.psp2dmp` crash dump analysis, emulation vs real hardware
@@ -34,3 +34,7 @@ implementation lives in the console's firmware), and CMake integration (`vita.to
     VitaMonoLoader (Mono/.NET for Unity's scripting backend), and other non-native runtimes
 13. [System integration libraries](13-system-integration-libraries.md) — QuickMenuReborn (Quick Menu
     widgets), libAppSettings (native settings dialog), and Unity-native (not ported) Vita builds
+14. [Prebuilt library gotchas](14-prebuilt-library-gotchas.md) — confirmed, worked cases of a
+    `vdpm`-installed third-party library behaving unexpectedly on real hardware (VitaSDK's prebuilt
+    zlib genuinely using ARM NEON), for when a crash's fault PC lands inside a library you didn't
+    write
