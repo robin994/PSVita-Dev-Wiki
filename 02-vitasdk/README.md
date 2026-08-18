@@ -22,3 +22,5 @@ implementation lives in the console's firmware), and CMake integration (`vita.to
 6. [Kernel plugins & taiHEN](06-kernel-plugins-taihen.md) — when and how homebrew reaches below user mode
 7. [Debugging & tooling](07-debugging-tooling.md) — VitaShell, real-time logging, `.psp2dmp` crash dump analysis, emulation vs real hardware
 8. [Best practices](08-best-practices.md) — a consolidated checklist for writing solid VitaSDK code
+9. [FMOD audio (FMOD-PSV)](09-fmod-audio.md) — the community FMOD Ex/Designer bridge, relevant when
+   porting a game/engine (e.g. an Android port) whose audio layer already targets FMOD

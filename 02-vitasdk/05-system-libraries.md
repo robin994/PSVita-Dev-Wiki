@@ -31,6 +31,10 @@ exists (rear touch and motion are absent on PSTV) — see
 - **`sceAvPlayer`** — the higher-level audio/video playback API, covered in depth in
   [Hardware: multimedia hardware](../01-hardware/07-multimedia-hardware.md) since most of what's
   interesting about it is really about the hardware decoder it drives.
+- **Third-party middleware**: if you're porting a game/engine that already targets FMOD (common in
+  Android ports) rather than writing straight to `sceAudioOut`, see
+  [FMOD audio (FMOD-PSV)](09-fmod-audio.md) for the community bridge, its build/linking story, and
+  its real gotchas.
 
 ## Dialogs
 
