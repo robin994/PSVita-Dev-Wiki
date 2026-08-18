@@ -16,8 +16,10 @@ never changes.
 1. [Methodology: the libultraship/Shipwright pattern](01-methodology.md) — the three-layer
    architecture (decomp / libultraship / asset pipeline) that makes this class of port tractable,
    and the concrete build-system recipe verified across three real, shipped Vita ports
-2. [Case study: Super Smash Bros. 64](02-case-study-ssb64.md) — the same methodology applied as a
-   *planning* exercise to a fourth game in this family that has not been ported to Vita yet
+2. [Case study: Super Smash Bros. 64](02-case-study-ssb64.md) — the same methodology applied to a
+   fourth game in this family; started as a planning exercise, now includes real real-hardware
+   bring-up findings (a confirmed architectural constraint around coroutine-stack kernel syscalls, a
+   fixed audio-heap logic bug, and an open non-deterministic zlib/NEON-related crash)
 
 ## How this differs from section 06
 
@@ -34,7 +36,9 @@ scaffolding a full game (as opposed to a single library) needs around that found
 
 Page 1 is grounded in three real, shipped Vita ports, verified by reading their actual
 `Makefile.vita` files and repository structure (not the game's copyrighted source or assets — none
-of these projects distribute ROM data, and neither does this wiki). Page 2 is explicitly a planning
-exercise for a game with no existing Vita port at the time of writing — treat it as a roadmap with
-verifiable milestones, not a description of working code, same caveat as section 06's RmlUi case
-study.
+of these projects distribute ROM data, and neither does this wiki). Page 2 started as a planning
+exercise for a game with no existing Vita port, then moved into real on-device bring-up once
+Rinnegatamante's Vita-patched `libultraship` fork was obtained — its early sections are still a
+planning-stage roadmap (labeled as superseded where real findings replace them), while its
+"Real-hardware bring-up findings" section is grounded in actual coredump analysis and confirmed,
+tested fixes on real hardware, same evidentiary bar as section 03's vitaGL pages.

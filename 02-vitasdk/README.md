@@ -24,3 +24,13 @@ implementation lives in the console's firmware), and CMake integration (`vita.to
 8. [Best practices](08-best-practices.md) — a consolidated checklist for writing solid VitaSDK code
 9. [FMOD audio (FMOD-PSV)](09-fmod-audio.md) — the community FMOD Ex/Designer bridge, relevant when
    porting a game/engine (e.g. an Android port) whose audio layer already targets FMOD
+10. [Reverse engineering & live debugging tools](10-reverse-engineering-debugging.md) — KVDB (live
+    kernel GDB stub), Ghidra/IDA/Binary Ninja Vita loaders, and the broader dumping/extraction
+    toolset, for when post-mortem coredump analysis alone isn't enough
+11. [Alternative toolchains & deployment](11-alternative-toolchains-deployment.md) — `vdpm` in
+    depth, VitaDeploy, the VDSuite toolchain lineage, and PSM Reborn's archived PlayStation Mobile
+    resources
+12. [Alternative runtimes & OpenAL](12-alternative-runtimes-openal.md) — vitaAL (OpenAL 1.1),
+    VitaMonoLoader (Mono/.NET for Unity's scripting backend), and other non-native runtimes
+13. [System integration libraries](13-system-integration-libraries.md) — QuickMenuReborn (Quick Menu
+    widgets), libAppSettings (native settings dialog), and Unity-native (not ported) Vita builds

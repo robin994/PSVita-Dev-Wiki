@@ -25,3 +25,4 @@ without adjustment, and vice versa.
 8. [Common pitfalls](08-common-pitfalls.md) — version drift, non-standard API surface, real gotchas from the field
 9. [Build-time flags reference](09-build-flags.md) — the full `make FLAG=1 install` flag list, what each does, and how to safely rebuild a substitute library
 10. [SDL2 + vitaGL: the Northfear/SDL fork](10-sdl2-vitagl-backend.md) — the SDL2 build you need when a project's GL/ImGui code expects `SDL_GL_*` to drive vitaGL, since VitaSDK's stock SDL2 doesn't
+11. [PVR_PSP2: an alternative GLES backend](11-alternative-gles-backend-pvr.md) — a full PowerVR driver stack (2D, EGL, GLES 1.1/2.0) as a different architectural approach from vitaGL, and what Northfear/SDL's `VIDEO_VITA_PVR` flag actually routes to

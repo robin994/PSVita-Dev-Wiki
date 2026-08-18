@@ -50,7 +50,11 @@ understanding, kept up to date deliberately, not a finished/frozen reference.
 7. **[Porting decompiled console games](07-porting-decompiled-games/README.md)** — a different
    problem from section 6: bringing a whole decompiled game (not a single library) to the Vita,
    using the libultraship/Shipwright pattern behind community ports like Ghostship and
-   SpaghettiKart. Includes a planning-stage case study applying it to a Super Smash Bros. 64 port.
+   SpaghettiKart. Includes a case study applying it to a Super Smash Bros. 64 port, with real
+   findings from actual real-hardware bring-up.
+8. **[Porting Android apps/games](08-porting-android-apps/README.md)** — a third porting shape:
+   running an Android APK's compiled native library directly on Vita (no source needed), via a
+   `.so` loader/relocator plus a fake JNI/JVM surface.
 
 ## How to read this
 
@@ -63,7 +67,9 @@ instead? Read vitaGL, then imgui-vita as a real worked example, then the porting
 section for how to generalize that to a different library. Porting a whole decompiled game (a
 libultraship/Shipwright-family project, or similar) rather than a single library? Read vitaGL for
 the graphics foundation, then go straight to section 7 — it's a different shape of problem from
-section 6 and has its own methodology. If you already know roughly what you're
+section 6 and has its own methodology. Porting an Android game/app instead, with no source and only
+a compiled `.so`? Section 8 is its own methodology again, closer in spirit to "run someone else's
+binary" than to either porting shape above. If you already know roughly what you're
 doing, jump straight to the section/page you need — each page is written to be self-contained
 enough to skim on its own.
 
