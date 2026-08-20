@@ -95,6 +95,31 @@ entire lifecycle on your behalf:
   succeeds even on the stock, non-GL "vita" driver), that success does **not** confirm this fork
   is unnecessary — check specifically whether real frames make it to the screen once GL calls start
   flowing, not just whether window setup returned success.
+- **Confirmed real-hardware case of exactly this (battleship-vita, 2026-08-20).** A libultraship/
+  Fast3D port ([SSB64 case study](../07-porting-decompiled-games/02-case-study-ssb64.md)) that
+  initializes vitaGL itself directly (rather than through this fork) and links VitaSDK's *stock*
+  `libSDL2.a` hit this precisely: GL commands executed, Fast3D submitted real draws, `glReadPixels`
+  on framebuffer 0 confirmed non-black pixel data was actually rendered — but nothing ever reached
+  the display, because stock SDL2's Vita driver presents its own sceGxm-based `SDL_Renderer`
+  surface, not vitaGL's. `SDL_GL_SwapWindow()` was therefore a no-op with respect to what was
+  actually on screen. The project didn't switch to this fork (it doesn't use SDL for anything beyond
+  windowing/input and already owns vitaGL init); instead it stopped calling `SDL_GL_SwapWindow()` on
+  Vita entirely and calls `vglSwapBuffers(GL_FALSE)` directly at end of frame. This is a valid
+  alternative to adopting the fork *specifically when your project already initializes and owns
+  vitaGL itself* — but see the `VITA_GLES_SwapWindow` entry above: doing this yourself means you also
+  lose the fork's IME-pump-on-swap behavior, which you'd then need to replicate manually if the
+  project shows the on-screen keyboard.
+- **Stock SDL2's Vita driver also returns 0×0 from window/drawable-size queries** —
+  `SDL_GetWindowSize()` and `SDL_GL_GetDrawableSize()` both confirmed on real hardware to return
+  `0x0` for the "vita" driver's OpenGL-flavored window, not just an untested edge case. In the same
+  battleship-vita bring-up, this silently left an ImGui dockspace sized to its 32×32 fallback (ImGui
+  never got a real display size to size the dockspace against), which in turn left the actual game
+  viewport at 32×32 — a healthy, correctly-submitted frame that then only rendered into a tiny corner
+  of the screen and looked indistinguishable from a black screen. There is no dynamic Vita window size
+  to query in the first place (the display is fixed), so the fix is to skip the query on Vita and feed
+  the known-fixed 960×544 physical dimensions directly wherever window/drawable size is read,
+  including inside any window-resize event handling that might otherwise overwrite a correct fixed
+  value with the driver's 0×0.
 
 ## Sourcing note
 

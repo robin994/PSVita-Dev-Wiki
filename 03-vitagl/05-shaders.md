@@ -85,12 +85,30 @@ reliability issue rather than a bug in the shader:
   a safe thing to do** — don't build a retry loop around this API assuming failure is a clean,
   recoverable state.
 
-No fix has been confirmed yet as of this writing; the practical implication for planning a project
-around runtime `SceShaccCg` compilation is that occasional multi-second stalls and occasional hard
-failures on ordinary, valid, previously-working shaders should be treated as an expected operating
-characteristic to design around (e.g. compile everything you'll need well before it's needed and cache
-the result — see "Runtime vs offline shader compilation" above — rather than something a specific code
-fix will make go away).
+No fix for the underlying compiler reliability itself has been confirmed; the practical implication
+for planning a project around runtime `SceShaccCg` compilation is that occasional multi-second
+stalls and occasional hard failures on ordinary, valid, previously-working shaders should be treated
+as an expected operating characteristic to design around (e.g. compile everything you'll need well
+before it's needed and cache the result — see "Runtime vs offline shader compilation" above — rather
+than something a specific code fix will make go away). A confirmed *workaround* that closes the
+"genuine gap" identified below does exist, though — see "Proactive full-combo pre-warm" under Prior
+art.
+
+### A heap-pressure correlation, not just nondeterminism (confirmed, battleship-vita, 2026-08-20)
+
+A real-hardware investigation on a fifth libultraship/Fast3D Vita port (the SSB64 port covered in
+this wiki's own [case study](../07-porting-decompiled-games/02-case-study-ssb64.md)) found a
+concrete correlation the "genuinely unreliable" framing above doesn't fully capture: a Fast3D shader
+program compiled and linked successfully immediately after `InitWindow()`, while the same process's newlib heap usage was
+still around 68 MiB — then, once game-resource loading had grown that usage to roughly 107–115 MiB,
+*every subsequent, previously-untried* shader program failed with the same `fatal internal error line
+-1`, on the same build, same device, same boot. This is consistent with `SceShaccCg` (or the
+allocator path it depends on) becoming unreliable under heap pressure specifically, rather than
+failing uniformly at random regardless of memory state — though it does not contradict the
+"identical source, different outcome across runs" finding above, since two runs can easily differ in
+how much heap has been consumed by the time a given shader is first requested. Treat "how much of the
+process heap is already committed at compile time" as a variable worth controlling for, not just
+logging, when chasing this failure mode.
 
 ### Prior art: how other libultraship/Fast3D Vita ports handle this
 
@@ -115,22 +133,33 @@ renderer (Rinnegatamante's Ghostship/SM64, 2ship2harkinian/Majora's Mask, Spaghe
   symptom was found** in vitaGL's issue tracker, any of the four ports' issue trackers, or general
   Vita homebrew community spaces — this appears to be either underreported or not previously
   isolated as cleanly as in this investigation.
-- **One concrete, unexplored lever**: vitaGL exposes
-  `vglSetupRuntimeShaderCompiler(shark_opt opt_level, int fastmath, int fastprecision, int fastint)`
-  to override the optimizer settings passed into `shark_compile_shader_extended()` per-compile
-  (vitaGL's own defaults are `SHARK_OPT_FAST`, `fastmath=1`, `fastint=1`, `fastprecision=0`) — none
-  of the four surveyed ports call this anywhere, so it's untested prior art rather than a ruled-out
-  option. Internal compiler crashes tied to an aggressive fast-math optimization pass on a specific
-  instruction shape is a plausible bug class for a stripped-down toolchain component like
-  `SceShaccCg`, and this is a legitimate next experiment: recompile just the problem shader with a
-  less aggressive `shark_opt` level and/or `fastmath=0`/`fastint=0`.
-- **A genuine gap in existing prior art**: none of the four ports do any *proactive* warm-priming of
-  their full shader-combo space (e.g. via a one-time "optimizing shaders" pass on first boot that
-  walks every combo the ROM's draw calls can produce, extractable via a GBI trace — Starship's own
-  docs describe exactly this trace-capture workflow) — they all compile strictly lazily, on first
-  real encounter, mid-gameplay. Combining the on-disk `glProgramBinary` cache pattern above with a
-  proactive first-boot priming pass (rather than lazy on-demand compilation) is a real opportunity,
-  not something already tried and found wanting elsewhere.
+- **The `vglSetupRuntimeShaderCompiler` lever: tried, ruled out (battleship-vita, 2026-08-20).**
+  vitaGL exposes `vglSetupRuntimeShaderCompiler(shark_opt opt_level, int fastmath, int
+  fastprecision, int fastint)` to override the optimizer settings passed into
+  `shark_compile_shader_extended()` per-compile (vitaGL's own defaults are `SHARK_OPT_FAST`,
+  `fastmath=1`, `fastint=1`, `fastprecision=0`). Two real-hardware experiments against the same
+  reproducing shader both made things *worse*, not better: dropping `fastmath`/`fastint` to 0 (opt
+  level left at default) turned the failure from its usual fast crash or ~13s success into an
+  indefinite hang (4m45s+, no crash, no coredump); dropping the optimizer level all the way to
+  `SHARK_OPT_SLOW` (O0, fastmath/fastint left at default) reproduced the exact same hang signature
+  instead of fixing anything. **Any deviation from vitaGL's exact default optimizer settings turned
+  this failure into a worse one (a silent hang) rather than resolving it** — treat both knobs as
+  ruled out for this failure mode, not merely untested.
+- **The proactive warm-priming gap: closed (battleship-vita, 2026-08-20).** None of the original four
+  surveyed ports do any *proactive* warm-priming of their full shader-combo space (e.g. via a
+  one-time "optimizing shaders" pass on first boot that walks every combo the ROM's draw calls can
+  produce, extractable via a GBI trace — Starship's own docs describe exactly this trace-capture
+  workflow) — they all compile strictly lazily, on first real encounter, mid-gameplay. A fifth port
+  (SSB64, this wiki's own [case study](../07-porting-decompiled-games/02-case-study-ssb64.md)) closed
+  this gap directly: it precompiled the 41 unique shader pairs observed across full hardware
+  boot-and-attract-mode captures immediately after `InitWindow()` — while the newlib heap was still
+  small, per the heap-pressure correlation above — and kept every successful program in the
+  renderer's normal in-memory cache (not the unsafe on-disk `glProgramBinary` cache). Confirmed on
+  hardware: 41/41 pre-warmed programs succeeded, and no further `shader link failed` occurred for
+  the rest of that session. This doesn't fix `SceShaccCg`'s underlying reliability problem — a combo
+  outside the captured set would still risk hitting it lazily, under heap pressure, exactly as
+  before — but it demonstrates the proactive-priming approach genuinely works when the combo space is
+  known and primed early enough.
 
 ## Practical guidance
 

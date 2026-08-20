@@ -126,3 +126,40 @@ bug list and current status, see the project's own `docs/bugs/` rather than this
   eliminated entirely as a real-hardware test, and the same crash still occurred — so it isn't
   (solely) a race with that specific thread. The vitaGL garbage-collector thread (also genuinely
   concurrent, not yet tested this way) remains an open candidate for this specific port.
+
+## Real-hardware bring-up findings (2026-08-20): the black screen is resolved
+
+Once the coroutine/audio/VBO-scratch issues above were cleared, the game booted with audio and
+processed graphics work, but the display stayed black through several more root causes, stacked on
+top of each other. Each is a real, confirmed-on-hardware mechanism belonging in a generic reference
+page (linked below), not something specific to this game — this section is only the summary of how
+they showed up here and in what order; the project's own `docs/bugs/` has the full blow-by-blow.
+
+- **A fixed 10 MiB-per-frame VBO scratch reservation was starving vitaGL's shared scratch pool**,
+  leaving too little memory for `SceShaccCg` to compile/register runtime shaders even though a full
+  populated Fast3D batch is at most ~96 KiB. Fixed by allocating only each draw's actual populated
+  byte count from `vglAllocFromScratch()` instead of a fixed worst-case block.
+- **`SceShaccCg`'s reliability problem correlates with process heap pressure, and a full-combo
+  proactive pre-warm confirmed works around it** — see
+  [vitaGL: Shaders](../03-vitagl/05-shaders.md#a-heap-pressure-correlation-not-just-nondeterminism-confirmed-battleship-vita-2026-08-20)
+  for the mechanism (a shader that compiled cleanly at ~68 MiB of newlib usage failed once usage grew
+  to 107–115 MiB) and
+  [the closed prior-art gap](../03-vitagl/05-shaders.md#prior-art-how-other-libultrashipfast3d-vita-ports-handle-this)
+  for the fix that this project shipped: precompiling all 41 shader pairs observed across full
+  hardware boot/attract-mode captures immediately after `InitWindow()`, before game-resource loading
+  consumes the heap. Confirmed on hardware: 41/41 succeeded, zero further link failures that session.
+- **Even with shaders compiling and real geometry submitted (confirmed via `glReadPixels` on FB0
+  showing non-black pixels), nothing reached the screen** — two independent presentation-layer bugs,
+  both now documented generically in
+  [SDL2 + vitaGL: the Northfear/SDL fork](../03-vitagl/10-sdl2-vitagl-backend.md#practical-implications):
+  this port links VitaSDK's stock SDL2 (not the Northfear vitaGL fork) while initializing vitaGL
+  itself directly, so `SDL_GL_SwapWindow()` was presenting the wrong (stock sceGxm `SDL_Renderer`)
+  surface — fixed by calling `vglSwapBuffers(GL_FALSE)` directly instead; and stock SDL2's Vita driver
+  returns `0x0` from `SDL_GetWindowSize()`/`SDL_GL_GetDrawableSize()`, which left ImGui's dockspace
+  (and therefore the actual game viewport) sized to a 32×32 fallback — fixed by feeding the known-fixed
+  960×544 physical display size directly instead of querying it.
+- With all of the above applied, video became visible on real hardware. The desktop transition-
+  capture workaround (rendering into an off-screen `mGameFb` FBO, then compositing it back via
+  `ImGui::Image`) remains disabled on Vita for now rather than re-verified — see the project's
+  `docs/bugs/` for the current status of re-enabling stage-transition snapshots through a Vita-native
+  FB0 capture path instead.
