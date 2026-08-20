@@ -53,6 +53,58 @@ desktop/ES OpenGL codebase will need real adaptation, not just a recompile — a
 conformance and being surprised when a less-common GL feature isn't implemented (or behaves subtly
 differently) is a common early-adoption pitfall for anyone coming from more mainstream GL platforms.
 
+## vitaGL's `mod()` translation doesn't match GLSL semantics
+
+If your project uses vitaGL's built-in GLSL→Cg auto-translator (see
+[Shaders](05-shaders.md#vitagls-own-glslcg-auto-translator-a-third-path)) rather than hand-written
+Cg, be aware that at least some vitaGL versions translate GLSL's `mod()` as a naive
+`#define mod(x,y) fmod(x,y)`. This is wrong on two counts: GLSL's `mod()` is defined as
+`x - y*floor(x/y)` (result takes the sign of `y`), while C's `fmod()` takes the sign of `x` — these
+genuinely disagree for negative operands — and the macro form also doesn't support GLSL's
+guaranteed `mod(vecN, float)` scalar-second-argument overload, which `fmod` can't provide directly.
+Any shader relying on `mod()`'s wraparound behavior with negative inputs (a very common pattern —
+UV wrapping, phase/angle wrapping, dithering/noise patterns computed from screen coordinates) will
+silently produce wrong output rather than fail to compile, since both `fmod` and the macro are
+syntactically valid.
+
+**Mitigations:**
+- Replace the macro with real overloaded functions implementing the correct formula, one per
+  argument-type combination GLSL supports (`float`/`float2`/`float3`/`float4`, and a scalar-`y`
+  overload for each vector width):
+  ```c
+  inline float mod(float x, float y) { return x - y * floor(x / y); }
+  inline float2 mod(float2 x, float y) { return x - y * floor(x / y); }
+  inline float2 mod(float2 x, float2 y) { return x - y * floor(x / y); }
+  // ...and so on for float3/float4
+  ```
+- This is worth fixing on general correctness grounds even if it isn't the cause of whatever
+  specific bug prompted you to look at the translator — confirmed, in one real port's debugging
+  session, to be a genuine latent bug independent of an unrelated shader-compiler reliability issue
+  being investigated at the same time (don't assume finding and fixing this one bug means you've
+  found the *whole* problem).
+
+## Dead helper functions with unused `sampler2D` parameters can trip the shader compiler
+
+Also relevant if your engine generates shader source programmatically (as libultraship/Fast3D-style
+engines do) rather than hand-authoring each shader: it's easy to end up emitting a helper function
+definition unconditionally into the generated source — e.g. a texture-fetch/filtering helper taking
+a `sampler2D` parameter — while gating all of its *call sites* behind a runtime feature flag (e.g.
+"is any texture actually bound for this draw"). When no texture is used, the function still gets
+emitted but is never called, left as dead code with an unused opaque-resource-typed (`sampler2D`)
+parameter. This was found and fixed in one real port as a plausible contributor to intermittent
+Sony `SceShaccCg` runtime-compiler failures on specific no-texture shader variants — treat an
+always-emitted helper function with an unused sampler parameter as a code smell worth eliminating
+even before you've proven it's the root cause of a specific compiler failure.
+
+**Mitigations:**
+- Gate the helper function's *definition*, not just its call sites, behind the same condition that
+  determines whether it's ever actually called — if nothing calls it, don't emit it.
+- More generally, when shader source is generated programmatically from a set of feature flags,
+  keep the emitted source's shape (which functions/variables exist at all) in sync with which
+  features are actually active for that specific draw, rather than always emitting the "maximal"
+  shader and relying on dead code being harmless — a runtime shader compiler is not guaranteed to
+  treat truly dead code as inconsequential the way a mature, heavily-fuzzed desktop compiler would.
+
 ## Not verifying on real hardware
 
 Broader than a vitaGL-specific pitfall, but worth repeating here because graphics code is exactly

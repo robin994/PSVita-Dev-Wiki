@@ -61,6 +61,44 @@ manually-swapped stack sometimes in a project built this way, and pre-warming a 
 that — that remains an open, structural constraint of this execution model rather than something a
 handful of pre-warm calls fully resolves.
 
+### The actual fix: stop manually swapping stacks, use `SceFiber`
+
+Everything above describes symptoms and per-call-site workarounds for the *same* root cause: a
+manually-swapped stack (raw `memalign`'d buffer, hand-rolled assembly register/SP swap) was never
+registered with the kernel as belonging to any real execution context, so kernel-mediated calls made
+from it have no valid context to resolve against. Continuing to chase individual call sites (pre-warm
+this lock, pre-fetch that allocation) doesn't fix the underlying model — it just narrows how often you
+hit it, and a genuinely fresh kernel-mediated call site (not a one-time lazy-init) has **no** pre-warm
+workaround, per above.
+
+**Confirmed on real hardware**: replacing the manually-swapped-stack backend with Vita's own
+`SceFiber` API (`<psp2/fiber.h>`, link `-lSceFiber_stub`, `sceSysmoduleLoadModule(SCE_SYSMODULE_FIBER)`)
+eliminates this entire bug class outright — every crash signature described above (the explicit
+`sceKernelDelayThread` case, the raw `write()` case, every lazy-kernel-lock case) stopped reproducing
+once every logical "thread" ran as a real `SceFiber` instead of a raw stack swap. This isn't a
+guess-and-check result: `libretro-common`'s `libco` backend (`scefiber.c`) already does the same
+thing for RetroArch's Vita port, and RetroArch performs real I/O from within its cooperative fiber
+contexts in production, which was independent evidence this primitive doesn't share the manually-
+swapped stack's fatal flaw before ever testing it.
+
+**Design notes for a `SceFiber`-based coroutine backend:**
+- `SceFiber`'s API is *not* one symmetric swap primitive (unlike a hand-rolled `swapcontext`-style
+  function) — it's three distinct calls depending on the direction of the transfer:
+  `sceFiberRun()` (thread → fiber, i.e. called from a plain, non-fiber execution context to start or
+  resume a fiber), `sceFiberSwitch()` (fiber → fiber, called from *within* one fiber to transfer to
+  another), and `sceFiberReturnToThread()` (fiber → thread, called from within a fiber to give
+  control back to whichever plain-thread context originally called `sceFiberRun()` on it).
+- A coroutine library wrapping this needs to track, per logical coroutine, *who resumed it this
+  time* (a real thread, or another specific fiber) so that when it yields, it picks the matching call
+  — this mirrors exactly the "caller context" bookkeeping a hand-rolled `swapcontext`-based backend
+  already needs for correct nested-resume behavior (e.g. thread → coroutine A → coroutine B →
+  B yields → back to A → A yields → back to thread), just against three asymmetric primitives
+  instead of one symmetric swap.
+- Each `SceFiber`'s backing "context" buffer (passed to `_sceFiberInitializeImpl`) plays the same
+  role a hand-rolled backend's manually-`memalign`'d stack does — same sizing considerations apply
+  (a few hundred KB is a safe default for a general-purpose coroutine; scale down for large numbers
+  of short-lived, simple ones if memory is tight).
+
 ## Synchronization
 
 - **Mutexes** (`sceKernelCreateMutex`/`Lock`/`Unlock`) and **semaphores**
